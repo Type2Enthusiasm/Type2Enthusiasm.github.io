@@ -1,0 +1,30 @@
+name: Build and Deploy
+on: push
+permissions:
+  contents: write
+jobs:
+  build-and-deploy:
+    concurrency: ci-${{ github.ref }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v3
+
+      - name: Install and Build 🔧
+        run: |
+          python3 -m pip install shutil
+          python3 -m pip install jinja2
+          python3 -m pip install markdown
+          python3 -m pip install pathlib
+          python3 -m pip install datetime
+          python3 -m pip install dataclasses
+          python3 -m pip install os
+          python3 build.py
+          
+
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@v4.3.3
+        if: ${{ github.ref == 'refs/heads/main/public' }}
+        with:
+          branch: gh-pages  # The branch the action should deploy to.
+          folder: public  # The folder the action should deploy.
