@@ -1,3 +1,3 @@
 # Harrison Esterly
 
-Personal landing page served of 
+Personal landing page for HarrisonEsterly.info 
