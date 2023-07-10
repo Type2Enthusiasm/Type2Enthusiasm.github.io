@@ -12,6 +12,7 @@ jobs:
 
       - name: Install and Build 🔧
         run: |
+          python3 -m pip install markdown
           python3 build.py
           
 
