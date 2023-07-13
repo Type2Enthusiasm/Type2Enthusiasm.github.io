@@ -1,3 +1,9 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box; /* This line will help your widths to include padding and border */
+}
+
 a {
   text-decoration: none;
   color: #81a2be;
@@ -5,24 +11,36 @@ a {
 
 body {
   font-family: 'DejaVu Sans Mono', monospace;
-  margin: 40px auto;
-  min-width: 80ch;
-  max-width: 80ch;
+  margin: 0;
   line-height: 1.5;
   font-size: 16px;
   background-color: #1d1f21;
   color: #c5c8c6;
-  padding: 0 10px;
+  padding: 0;
   text-align: left;
   overflow-y: scroll;
 }
 
 h2 {
   font-size: 16px;
+  padding: 30px auto 0;
+}
+
+main {
+  padding: 20px; /* Space inside the main, between the content and its border */
+  margin: 60px auto 0; /*   Space outside the main's border. 
+                            Top: 120px to account for the navbar,
+                            right and left: auto for horizontal centering, bottom: 0 */
+  min-width: 120ch;
+  max-width: 120ch;
+}
+
+main p {
+  margin-bottom: 20px;
 }
 
 pre {
-  width: 80ch;
+  width: 120ch;
   padding: 15px;
   margin-left: auto;
   margin-right: auto;
@@ -63,4 +81,70 @@ table, th, td {
 
 th, td {
   padding: 5px;
+}
+
+
+.navbar {
+  width: 100%;
+  position: fixed;
+  top: 0;
+  background-color: #1d1f21;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 30px 10px 30px;
+}
+
+.navbar .logo h1 {
+  color: #c5c8c6;
+  font-size: 24px;
+
+}
+
+.navbar ul {
+  list-style: none;
+  display: flex;
+  margin: 0;
+  font-size: 24px;
+}
+
+.navbar ul li {
+  margin-left: 20px;
+  position: relative; /* this allows absolute positioning within the element */
+  overflow: hidden; /* hides anything that goes outside the boundaries of the element */
+}
+
+.navbar ul li a {
+  position: relative;
+  color: #c5c8c6;
+  text-decoration: none;
+}
+
+.navbar ul li a::before {
+  content: ""; /* this is necessary for the pseudo-element to work, even if it's empty */
+  position: absolute; /* this takes the element out of the document flow and positions it relative to the nearest positioned ancestor */
+  width: 100%;
+  height: 2px; /* adjust this to make the line thicker or thinner */
+  bottom: 0;
+  left: -100%; /* start the line to the left of the element */
+  background: #c5c8c6; /* change this to whatever color you want the line to be */
+  transition: all 0.3s ease-in-out; /* this animates the line */
+}
+
+.navbar ul li a:hover::before {
+  left: 0; /* this moves the line to the start of the element */
+}
+
+.copyright {
+  display: flex;
+  justify-content: space-between;
+}
+
+.right {
+  display: flex;
+}
+
+.gif-image {
+  width: 50%; /* Or whatever size you want */
+  display: block;
+  margin: auto; /* Centering the image */
 }
