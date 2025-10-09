@@ -1,0 +1,14 @@
+# Node/JS
+node_modules/
+dist/
+build/
+.cache/
+.next/
+out/
+# Python
+__pycache__/
+*.py[cod]
+# macOS
+.DS_Store
+# env
+.env

@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+
+  <!-- FOUC prevention: set theme before CSS loads -->
+<script>
+  (function() {
+    try {
+      const KEY = 'theme';
+      // 1) Read user's last choice
+      const stored = localStorage.getItem(KEY);
+      // 2) If none, fall back to system preference (correct direction)
+      const sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      const theme = stored || sys;
+      document.documentElement.setAttribute('data-theme', theme);
+      // Optional: keep storage aligned on first load with system default
+      if (!stored) localStorage.setItem(KEY, theme);
+    } catch (_) {}
+  })();
+</script>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Harrison J. Esterly — Home</title>
+  <meta name="description" content="Ultrafast spectroscopy PhD building science → startups/VC."/>
+
+  <!-- feather icons - scaleable and good lookin'-->
+  <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+<script>
+  (function ready(fn){document.readyState!=='loading'?fn():document.addEventListener('DOMContentLoaded',fn)})(function(){
+    if (window.feather) feather.replace({ 'stroke-width': 1.75 });
+  });
+</script>
+
+
+  <!-- Fonts: Ubuntu body + Raleway headings (thin) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400&family=Raleway:wght@200;300;400&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-row">
+      <div class="header-left">
+        <a class="site-title" href="index.html">Harrison J. Esterly</a>
+        <nav class="site-nav">
+          <a href="index.html" aria-current="page">Home</a>
+          <a href="research.html">Research</a>
+          <a href="consulting.html">Biotech Consulting</a>
+          <a href="contact.html">Contact</a>
+          <a href="downloads/CV[esterly].pdf">CV</a>
+        </nav>
+      </div>
+      
+
+      <div class="header-right">
+        <nav class="site-social" aria-label="Social links">
+          <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en" aria-label="Google Scholar" title="Google Scholar" rel="me">
+            <i data-feather="book-open"></i>
+          </a>
+          <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn" title="LinkedIn" rel="me">
+            <i data-feather="linkedin"></i>
+          </a>
+          <a href="https://github.com/Type2Enthusiasm" aria-label="GitHub" title="GitHub" rel="me">
+            <i data-feather="github"></i>
+          </a>
+        </nav>
+    
+        <!-- Theme toggle on the RIGHT -->
+        <button class="theme-toggle" id="theme-toggle" aria-pressed="false"
+                aria-label="Toggle color theme" title="Toggle theme">
+          <!-- Sun (uniform dots) -->
+          <svg class="sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <!-- core -->
+            <circle cx="12" cy="12" r="4"></circle>
+            <!-- rays -->
+            <circle cx="12" cy="3" r="1.25"></circle>   <!-- top -->
+            <circle cx="12" cy="21" r="1.25"></circle>  <!-- bottom -->
+            <circle cx="3"  cy="12" r="1.25"></circle>  <!-- left -->
+            <circle cx="21" cy="12" r="1.25"></circle>  <!-- right -->
+            <circle cx="5.636"  cy="5.636"  r="1.25"></circle>  <!-- top-left -->
+            <circle cx="18.364" cy="5.636"  r="1.25"></circle>  <!-- top-right -->
+            <circle cx="5.636"  cy="18.364" r="1.25"></circle>  <!-- bottom-left -->
+            <circle cx="18.364" cy="18.364" r="1.25"></circle>  <!-- bottom-right -->
+          </svg>
+          <!-- Moon (shown in dark mode) -->
+          <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+
+  <main class="container content">
+
+  
+  <section>
+  <h1>Research</h1>
+
+    <p>My doctoral research revolved around advancing two-dimensional infrared spectroscopy (2D-IR) for biological systems, applying the technique to resolve the toxic oligomeric structure of human islet amyloid polypeptide (hIAPP), a key driver of type-2 diabetes. By stabilizing a transient oligomeric state and combining 2D-IR, NMR, and molecular dynamics, we obtained a high-resolution structure that reveals surfaces amenable to therapeutic targeting.</p>
+    
+    <p>In parallel, I characterized the <a href="https://pubs.aip.org/aip/jcp/article/161/21/214202/3323342"> thermal effects of our 100 kHz 2D-IR spectrometer</a>, developing methods to measure and control steady-state sample temperature and identifying a laser-induced artifact signal that limits signal-to-noise in dilute solutions. I showed this artifact can be eliminated under specific polarization conditions, enabling more accurate biophysical measurements.</p>
+    
+    <p>Previously, I served as the lead researcher in a multinational collaboration between BASF and UNC-Chapel Hill, where I studied the protective properties of tardigrade proteins for industrial applications. As an undergraduate, I investigated the role of oxidative stress in stem-cell differentiation and explored protein-based excipients for biologics <a href="https://www.frontiersin.org/journals/pharmacology/articles/10.3389/fphar.2020.565969/full">protein-based excipients for biologics</a>, demonstrating their potential to enable dry storage of therapeutics.</p>
+
+    <p>If I had more than one lifetime, I would love to contribute to additional scientific fields: macromolecular crowding, biomolecular condensates, transcriptomics, imaging-based diagnostics, organoid bioprinting, cellular computation, and agricultural engineering.</p>
+  </section>
+
+  <hr/>
+
+  <section>
+    <h2>Publications</h2>
+    <ul class="post-list">
+      <li>
+        <div class="post-title">Delaying the Onset of Aggregation Enables a Structural Model of a Toxic Amyloid Oligomer for hIAPP</div>
+        <div class="meta">
+          <em>In Preparation</em> (2025) 
+        </div>
+      </li>
+
+      <li>
+        <div class="post-title">Mitigation of Thermal Artifacts in 100 kHz Ultrafast 2D IR Spectroscopy</div>
+        <div class="meta">
+          <em>J. Chem. Phys.</em> (2024) 161(21):214202 ·
+          <a href="https://doi.org/10.1063/5.0240793" rel="noopener">https://doi.org/10.1063/5.0240793</a>
+        </div>
+      </li>
+
+      <li>
+        <div class="post-title">Protection by Desiccation-Tolerance Proteins Probed at the Residue Level</div>
+        <div class="meta">
+          <em>Protein Sci.</em> (2022) 31(2):396-406 ·
+          <a href="https://doi.org/10.1002/pro.4220" rel="noopener">https://doi.org/10.1002/pro.4220</a>
+        </div>
+      </li>
+
+      <li>
+        <div class="post-title">Toxicity and Immunogenicity of a Tardigrade Cytosolic Abundant Heat Soluble Protein in Mice</div>
+        <div class="meta">
+          <em>Front. Pharmacol.</em> (2020) 11:565969 ·
+          <a href="https://doi.org/10.3389/fphar.2020.565969" rel="noopener">https://doi.org/10.3389/fphar.2020.565969</a>
+        </div>
+      </li>
+    </ul>
+
+  </section>
+
+<!--  <section> 
+    <h2>Notes & Slides</h2>
+    <ul>
+      <li><a href="#">2DIR primer</a> <span class="badge">note</span></li>
+      <li><a href="#">Thermal mitigation in mid‑IR experiments</a> <span class="badge">slides</span></li>
+    </ul>
+  </section> 
+-->
+
+  </main>
+  <footer>
+    <div class="container small">
+      <div> 2025 Harrison J. Esterly · <span class="meta">Template inspired by Ezhil-style minimalism.</span></div>
+    </div>
+  </footer>
+</body>
+</html>
+
+
+  <!-- Toggle logic -->
+  <script>
+  (function(){
+    const KEY = 'theme';
+    const root = document.documentElement;
+    const btn  = document.getElementById('theme-toggle');
+    if (!btn) return;
+
+    function apply(theme){
+      root.setAttribute('data-theme', theme);
+      btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+      try { localStorage.setItem(KEY, theme); } catch(_) {}
+    }
+
+    // Initialize from current attribute (already set in <head> script)
+    apply(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+
+    // Click to toggle
+    btn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      apply(current === 'dark' ? 'light' : 'dark');
+    });
+
+    // Optional: react if system theme changes (only when user hasn’t chosen)
+    try {
+      const m = window.matchMedia('(prefers-color-scheme: dark)');
+      m.addEventListener?.('change', e => {
+        if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light');
+       });
+     } catch (_) {}
+    })();
+  </script> 
+</body>
+</html>

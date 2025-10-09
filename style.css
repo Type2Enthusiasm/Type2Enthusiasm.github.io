@@ -1,0 +1,291 @@
+/* ==========================================================================
+   Minimal Personal Site CSS
+   - Ubuntu body + Raleway headings (thin, Ezhil-like)
+   - Brand colors (red link/muted)
+   - Right-side header theme toggle (data-theme with persistence)
+   ========================================================================== */
+
+/* Google Fonts imported in HTML via <link>; no @import here for perf */
+
+/* ===== Base light tokens ===== */
+:root{
+  --bg:#ffffff;
+  --text:#333333;
+  --muted:#990F00;
+  --hairline:#e6e6e6;
+  --link:#990F00;
+  --accent:#770c00;
+  --code-bg:#f6f8fa;
+
+  /* Fonts: Ezhil-like stack */
+  --font-body: "Ubuntu", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans",
+               sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-heading: "Raleway", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                  "Helvetica Neue", Arial, sans-serif;
+
+  /* Weights tuned to match the ultra-light header look */
+  --heading-weight: 200;  /* h1–h3 */
+  --title-weight: 300;    /* site title a touch stronger than section heads */
+
+  --container: 760px;
+  --radius: .5rem;
+}
+
+/* ===== System dark preference (fallback if no user choice yet) ===== */
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1115;
+    --text:#e6e8ee;
+    --muted:#a0a6b2;
+    --hairline:#222733;
+    --link:#ff8e7e;   /* readable warm link on dark; use #990F00 to keep brand exact */
+    --accent:#ff7a65;
+    --code-bg:#0d1117;
+  }
+}
+
+/* ===== Reset-ish & base ===== */
+*{ box-sizing:border-box }
+html{ scroll-behavior:smooth; -webkit-text-size-adjust:100% }
+body{
+  margin:0;
+  font:16px/1.65 var(--font-body);
+  color:var(--text);
+  background:var(--bg);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "liga" 1, "kern" 1; /* no discretionary ligatures */
+}
+
+/* ===== Containers ===== */
+.container{ max-width:var(--container); margin:0 auto; padding:0 1rem; }
+
+/* ===== Header & nav ===== */
+.site-header{ 
+  padding:2.5rem 0 1rem; 
+  border-bottom:1px solid 
+  var(--hairline); 
+}
+
+.header-row{
+  display:flex;
+  justify-content:space-between;   /* pushes .header-right to the right */
+  align-items:center;              /* keep everything on one line */
+  gap:1rem;
+}
+
+.header-left{ min-width:0; }
+
+.header-right{
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+}
+
+.site-title{
+  font-family: var(--font-heading);
+  font-size:2.2rem;
+  font-weight:var(--title-weight);
+  color:var(--text);
+  text-decoration:none;
+  letter-spacing: 0; /* neutral tracking for sans headings */
+}
+
+.site-subtitle{ margin:.25rem 0 0; color:var(--muted); font-size:1rem }
+.site-nav{ margin:.75rem 0 0; display:flex; gap:.9rem; flex-wrap:wrap; }
+.site-nav a{
+  font-size:.95rem; color:var(--muted); text-decoration:none; border-bottom:1px dotted transparent; padding-bottom:2px;
+}
+.site-nav a:hover{ color:var(--link); border-color:var(--link); }
+
+/* top row: title/subtitle */
+.header-top{
+  display:flex;
+  flex-direction:column;
+  gap:.25rem;
+}
+
+/* bottom row: pages left, actions right */
+.nav-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:1rem;
+  margin-top:.75rem; /* space under title */
+}
+
+/* right side group (icons + toggle) */
+.nav-actions{
+  display:flex;
+  align-items:center;
+  gap:.5rem; /* space between icons row and toggle button */
+}
+
+.site-social{
+  display:flex;
+  align-items:center;
+  gap:.35rem;
+}
+
+
+/* clickable icon pill */
+.site-social a{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:32px; height:32px;
+  border:1px solid var(--hairline);
+  border-radius:9999px;
+  color:var(--muted);              /* Feather SVGs use currentColor */
+  text-decoration:none;
+}
+
+
+.site-social a:hover{
+  color:var(--link);
+  border-color:var(--link);
+}
+
+/* Feather SVG size (after feather.replace) */
+.site-social svg{ width:18px; height:18px; }
+
+/* Mobile: compress spacing */
+@media (max-width:640px){
+  .header-row{ align-items:flex-start; }
+  .site-social a{ width:28px; height:28px }
+  .site-social svg{ width:16px; height:16px }
+}
+
+
+/* ===== Theme toggle (right side) ===== */
+.theme-toggle{
+  display:inline-flex; align-items:center; justify-content:center; gap:.3rem;
+  padding:.35rem .55rem;
+  border:1px solid var(--hairline); border-radius:9999px;
+  background:transparent; color:var(--muted);
+  cursor:pointer; user-select:none;
+  font:14px/1 var(--font-body);
+}
+.theme-toggle:hover{ color:var(--link); border-color:var(--link); }
+.theme-toggle:focus-visible{ outline:2px solid var(--link); outline-offset:2px; }
+.theme-toggle svg{ width:18px; height:18px; display:block }
+.theme-toggle .sun{ display:none }
+.theme-toggle .moon{ display:block }
+
+/* Icon swap */
+html[data-theme="light"] .theme-toggle .sun{ display:block }
+html[data-theme="light"] .theme-toggle .moon{ display:none }
+html[data-theme="dark"]  .theme-toggle .sun{ display:none }
+html[data-theme="dark"]  .theme-toggle .moon{ display:block }
+
+/* ===== Main content ===== */
+.content{ padding:1.25rem 0 3rem; }
+
+/* Ezhil-like heading sizes with thin weight */
+h1,h2,h3{
+  font-family: var(--font-heading);
+  line-height:1.2;
+  margin:2rem 0 0.75rem;
+  letter-spacing:.2px;             /* slight tracking helps thin sans */
+  font-weight:var(--heading-weight);
+}
+/* Sizes adapted from common Ezhil customizations */
+h1{ font-size:2.2rem }
+h2{ font-size:2rem }
+h3{ font-size:1.6rem }
+
+p{ margin:0 0 1rem }
+
+a{ color:var(--link); text-decoration-thickness:.06em; text-underline-offset:2px }
+a:hover{ text-decoration-style:dotted }
+
+/* Keyboard focus */
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible{
+  outline:2px solid var(--link); outline-offset:2px; border-radius:.25rem;
+}
+
+ul{ padding-left:1.25rem }
+hr{ border:0; border-top:1px solid var(--hairline); margin:2rem 0 }
+blockquote{
+  border-left:3px solid var(--hairline);
+  margin:1rem 0; padding:.5rem 1rem;
+  color:var(--muted);
+  font-family: Georgia, "Times New Roman", serif; /* Ezhil-like blockquote flavor */
+}
+
+/* Code */
+.code,code,kbd,pre{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+               "Liberation Mono", "Courier New", monospace;
+}
+code{ background:var(--code-bg); padding:.15em .35em; border-radius:.25rem }
+pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(--radius) }
+
+/* Small/meta */
+.small{ font-size:.92rem; color:var(--muted) }
+.meta{ color:var(--muted); font-size:.9rem }
+
+/* Lists of posts/projects */
+.post-list{ list-style:none; margin:0; padding:0 }
+.post-list li{ margin:0 0 1rem }
+.post-title{
+  font-family: var(--font-heading);
+  font-weight: 300;  /* slightly stronger than section heads */
+}
+
+/* Badges/helpers */
+.kicker{ display:inline-block; letter-spacing:.12em; text-transform:uppercase; font-size:.75rem; color:var(--muted) }
+.badge{ font-size:.75rem; border:1px solid var(--hairline); padding:.15rem .4rem; border-radius:.35rem; color:var(--muted) }
+.flex{ display:flex; gap:.75rem; align-items:center; flex-wrap:wrap }
+
+/* Social */
+.social{ display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.5rem }
+.social a{ display:inline-flex; align-items:center; gap:.4rem; color:var(--muted); text-decoration:none; border-bottom:1px dotted transparent }
+.social a:hover{ color:var(--link); border-color:var(--link) }
+.social svg{ width:18px; height:18px; display:block }
+
+/* Tables */
+.table{ width:100%; border-collapse:collapse }
+.table th,.table td{ padding:.5rem .4rem; border-bottom:1px solid var(--hairline); text-align:left }
+
+/* Footer */
+footer{ border-top:1px solid var(--hairline); padding:1rem 0 3rem; margin-top:2rem }
+
+/* Mobile */
+@media (max-width:640px){
+  .site-header{ padding:1.5rem 0 .75rem }
+  .site-title{ font-size:1.6rem }
+  .header-row{ align-items:center }
+}
+
+.contact p { max-width: 65ch; }
+.social { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem; }
+.social .btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 0.9rem; border: 1px solid #e0e0e0; border-radius: 8px;
+  text-decoration: none;
+}
+.social .btn:focus { outline: 2px solid #000; outline-offset: 2px; }
+
+
+/* ======== USER-SELECTED THEME OVERRIDES (must be last) ======== */
+html[data-theme="light"]{
+  --bg:#ffffff;
+  --text:#333333;
+  --muted:#990F00;
+  --hairline:#e6e6e6;
+  --link:#990F00;
+  --accent:#770c00;
+  --code-bg:#f6f8fa;
+}
+html[data-theme="dark"]{
+  --bg:#0f1115;
+  --text:#e6e8ee;
+  --muted:#a0a6b2;
+  --hairline:#222733;
+  --link:#ff8e7e;   /* set to #990F00 if you want identical brand in dark */
+  --accent:#ff7a65;
+  --code-bg:#0d1117;
+}

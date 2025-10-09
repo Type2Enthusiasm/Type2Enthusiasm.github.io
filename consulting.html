@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+
+
+  <!-- FOUC prevention: set theme before CSS loads -->
+<script>
+  (function() {
+    try {
+      const KEY = 'theme';
+      // 1) Read user's last choice
+      const stored = localStorage.getItem(KEY);
+      // 2) If none, fall back to system preference (correct direction)
+      const sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      const theme = stored || sys;
+      document.documentElement.setAttribute('data-theme', theme);
+      // Optional: keep storage aligned on first load with system default
+      if (!stored) localStorage.setItem(KEY, theme);
+    } catch (_) {}
+  })();
+</script>
+
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Harrison J. Esterly — Home</title>
+  <meta name="description" content="Ultrafast spectroscopy PhD building science → startups/VC."/>
+
+  <!-- feather icons - scaleable and good lookin'-->
+  <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+<script>
+  (function ready(fn){document.readyState!=='loading'?fn():document.addEventListener('DOMContentLoaded',fn)})(function(){
+    if (window.feather) feather.replace({ 'stroke-width': 1.75 });
+  });
+</script>
+
+
+  <!-- Fonts: Ubuntu body + Raleway headings (thin) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400&family=Raleway:wght@200;300;400&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-row">
+      <div class="header-left">
+        <a class="site-title" href="index.html">Harrison J. Esterly</a>
+        <nav class="site-nav">
+          <a href="index.html" aria-current="page">Home</a>
+          <a href="research.html">Research</a>
+          <a href="consulting.html">Biotech Consulting</a>
+          <a href="contact.html">Contact</a>
+          <a href="downloads/CV[esterly].pdf">CV</a>
+        </nav>
+      </div>
+      
+
+      <div class="header-right">
+        <nav class="site-social" aria-label="Social links">
+          <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en" aria-label="Google Scholar" title="Google Scholar" rel="me">
+            <i data-feather="book-open"></i>
+          </a>
+          <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn" title="LinkedIn" rel="me">
+            <i data-feather="linkedin"></i>
+          </a>
+          <a href="https://github.com/Type2Enthusiasm" aria-label="GitHub" title="GitHub" rel="me">
+            <i data-feather="github"></i>
+          </a>
+        </nav>
+    
+        <!-- Theme toggle on the RIGHT -->
+        <button class="theme-toggle" id="theme-toggle" aria-pressed="false"
+                aria-label="Toggle color theme" title="Toggle theme">
+          <!-- Sun (uniform dots) -->
+          <svg class="sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <!-- core -->
+            <circle cx="12" cy="12" r="4"></circle>
+            <!-- rays -->
+            <circle cx="12" cy="3" r="1.25"></circle>   <!-- top -->
+            <circle cx="12" cy="21" r="1.25"></circle>  <!-- bottom -->
+            <circle cx="3"  cy="12" r="1.25"></circle>  <!-- left -->
+            <circle cx="21" cy="12" r="1.25"></circle>  <!-- right -->
+            <circle cx="5.636"  cy="5.636"  r="1.25"></circle>  <!-- top-left -->
+            <circle cx="18.364" cy="5.636"  r="1.25"></circle>  <!-- top-right -->
+            <circle cx="5.636"  cy="18.364" r="1.25"></circle>  <!-- bottom-left -->
+            <circle cx="18.364" cy="18.364" r="1.25"></circle>  <!-- bottom-right -->
+          </svg>
+          <!-- Moon (shown in dark mode) -->
+          <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+
+  <main class="container content">
+
+    <section aria-labelledby="consulting">
+      <h1 id="consulting">Consulting</h1>
+
+      <p>
+        I provide <strong>strategic consulting</strong> for life-science startups, venture firms, and family offices.
+        My goal is to help founders navigate biotech innovation and investment with practical, hands-on support from
+        concept to financing to preclinical execution. Please don’t hesitate to
+        <a href="mailto:HarrisonJEsterly@gmail.com">contact me!</a>
+      </p>
+
+      <h3>How I help</h3>
+      <ul class="consulting-list">
+        <li>Diligence & landscape: technical validation, competitive/IP analysis, risk mapping</li>
+        <li>Non-dilutive funding: SBIR/STTR authorship, Specific Aims, Research Strategy, timelines</li>
+        <li>R&D roadmaps: preclinical study design, CRO coordination, data QC</li>
+        <li>Go-to-market & BD: indication assessment, KOL interviews, partnerships</li>
+        <li>Financials: DCF analysis, bottoms-up models, cap-table analysis</li>
+        <li>Investor materials: narrative, deck, data room, outreach strategy</li>
+        <li>Operator support: project management and creative ad-hoc help</li>
+      </ul>
+
+      <h3>Areas I’ve Worked In</h3>
+      <div class="badge-grid">
+        <span class="badge">Oncology</span>
+        <span class="badge">Neuroscience</span>
+        <span class="badge">Peptide Therapies</span>
+        <span class="badge">Diagnostic Platforms</span>
+        <span class="badge">AI-Enabled Medical Devices</span>
+        <span class="badge">Regenerative Medicine</span>
+        <span class="badge">Metabolic Disease</span>
+        <span class="badge">Theraputic/Formulation Development</span>
+      </div>
+    </section>
+
+    <hr />
+<!--
+    <section>
+    <h2>Investment Lens</h2>
+      <p>I can't see the future, but I believe that the healthcare system will be materially different in 15 years.
+         Time from bench to market will compress, personalized medicine will be more accessable, and quality of life will continue to improve for aging groups.
+         Value will be unlocked by pairing advanced data analysis techniques to large unified biologic datasets.
+         I believe many of these techniques and findings will be democrized, enabling founders and academic labs to be more capital effient and abundant.
+      </p>
+      <p>
+        Given this, the market could see a higher aquesition rate, giving investors more 1-10x returns, but even fewer companies will generate 100x returns.
+        Regardless, patients and consumers will benefit, health outcomes will improve for all groups, and there will still be more innovation to come in the next 15 years.
+      </p>
+
+      <h3>Areas I'm excited for</h3>
+        <div class="badge-grid">
+          <span class="badge">Neuropsychiatic Medicine</span>
+          <span class="badge">Regenerative Medicine</span>
+          <span class="badge">AI-Enabled Medical Devices</span>
+          <span class="badge">BCI</span>
+          <span class="badge">Mental Health</span>
+          <span class="badge">Virtual Cells</span>
+          <span class="badge">Peptide Therapies</span>
+          <span class="badge">Chonic Disease</span>
+          <span class="badge">Viral Vectors</span>
+        </div>
+    </section>
+ -->
+    <hr />
+
+    <section>
+      <h2>Get in Touch</h2>
+      <p>
+      I love meeting founders, scientists, and operators. The fastest path is email —
+      <a href="mailto:HarrisonJEsterly@gmail.com">HarrisonJEsterly@gmail.com</a> — or connect on LinkedIn.
+      </p>
+      <div class="social">
+      <a href="mailto:HarrisonJEsterly@gmail.com"><i data-feather="mail"></i>Email</a>
+      <a href="https://www.linkedin.com/in/harrison-esterly/"><i data-feather="linkedin"></i>LinkedIn</a>
+      </div>
+    </section>
+
+
+  </main>
+  <footer>
+    <div class="container small">
+      <div> 2025 Harrison J. Esterly · <span class="meta">Template inspired by Ezhil-style minimalism.</span></div>
+    </div>
+  </footer>
+
+  <!-- Toggle logic -->
+  <script>
+    (function(){
+      const root = document.documentElement;
+      const btn  = document.getElementById('theme-toggle');
+      if (!btn) return;
+
+      function apply(theme){
+        root.setAttribute('data-theme', theme);
+        btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+        try { localStorage.setItem('theme', theme); } catch(_) {}
+      }
+
+      // Ensure aria state matches current theme on load
+      apply(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+
+      btn.addEventListener('click', () => {
+        const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        apply(current === 'dark' ? 'light' : 'dark');
+      });
+    })();
+  </script>
+</body>
+</html>
