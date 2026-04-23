@@ -3,97 +3,101 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Harrison J. Esterly — Prototype A</title>
-  <meta name="description" content="Prototype A — quiet rupture: a calm personal site that opens into science, strategy, build, and contact." />
+  <title>Harrison J. Esterly — Living Lines</title>
+  <meta name="description" content="Living Lines: a clean, smooth, interactive personal site that keeps proof readable while the text moves." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="prototype.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="living-lines.css" />
   <link rel="icon" href="data:,">
 </head>
 <body>
   <div class="page-shell">
-    <header class="utility-bar" aria-label="Site utilities">
-      <a class="utility-name" href="index.html">Harrison J. Esterly</a>
-      <nav class="utility-links">
+    <header class="topbar" aria-label="Site navigation">
+      <a class="brand" href="index.html">Harrison J. Esterly</a>
+      <nav class="toplinks">
         <a href="research.html">Research</a>
-        <a href="consulting.html">Consulting</a>
+        <a href="consulting.html">Strategy</a>
         <a href="MPCNC.html">Build</a>
-        <a href="downloads/CV[esterly].pdf">CV</a>
+        <a href="contact.html">Contact</a>
       </nav>
     </header>
 
-    <main>
-      <section class="seam-stage" id="seam-stage" style="--open-progress: 0;">
-        <div class="surface surface-left" aria-hidden="true"></div>
-        <div class="surface surface-right" aria-hidden="true"></div>
-        <div class="seam-line" aria-hidden="true"></div>
-
-        <div class="hero-copy">
-          <p class="eyebrow">Prototype A / quiet rupture</p>
-          <h1>Harrison J. Esterly</h1>
-          <p class="thesis">I work where technical depth meets leverage.</p>
-          <p class="subcopy">Science, strategy, and built things — held back until invited forward.</p>
-
-          <div class="seam-control">
-            <button class="seam-handle" id="seam-handle" type="button" aria-expanded="false" aria-controls="revealed-grid">
-              <span class="handle-tab" aria-hidden="true"></span>
-              <span class="handle-label">pull to open</span>
-            </button>
-            <p class="handle-note">Drag the tab or click once. This is a concept study, not final copy.</p>
-          </div>
-        </div>
-
-        <section class="revealed-grid" id="revealed-grid" aria-label="Revealed profile areas">
-          <article class="cluster cluster-science">
-            <p class="cluster-kicker">Science</p>
-            <h2>Ultrafast spectroscopy, biological systems, and hard-to-observe structure.</h2>
-            <p>Work centered on two-dimensional infrared spectroscopy, including structural work on toxic hIAPP oligomers and method-level rigor in biophysical measurement.</p>
-            <div class="cluster-links">
-              <a href="research.html">Selected research</a>
-              <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en">Scholar</a>
-            </div>
-          </article>
-
-          <article class="cluster cluster-strategy">
-            <p class="cluster-kicker">Strategy</p>
-            <h2>Moving between technical diligence, financing logic, and execution.</h2>
-            <p>Biotech work across diligence, non-dilutive funding, R&amp;D roadmaps, investor materials, and operator support — without flattening the science.</p>
-            <div class="cluster-links">
-              <a href="consulting.html">Consulting</a>
-              <a href="contact.html">Reach out</a>
-            </div>
-          </article>
-
-          <article class="cluster cluster-build">
-            <p class="cluster-kicker">Build</p>
-            <h2>Not only analytical. Also physical, procedural, and hands-on.</h2>
-            <p>Home-built CNC work, firmware/config experimentation, and practical projects that keep thinking tied to objects, tolerances, and iteration.</p>
-            <div class="cluster-links">
-              <a href="MPCNC.html">Project artifacts</a>
-              <a href="https://github.com/Type2Enthusiasm">GitHub</a>
-            </div>
-          </article>
-
-          <article class="cluster cluster-contact">
-            <p class="cluster-kicker">Contact</p>
-            <h2>Direct works better than performative.</h2>
-            <p>Email is the cleanest path. LinkedIn, GitHub, and the CV stay available as proof, not as the main event.</p>
-            <div class="cluster-links">
-              <a href="mailto:HarrisonJEsterly@gmail.com">Email</a>
-              <a href="https://www.linkedin.com/in/harrison-esterly/">LinkedIn</a>
-              <a href="downloads/CV[esterly].pdf">CV</a>
-            </div>
-          </article>
-        </section>
+    <main class="hero-grid">
+      <section class="intro" aria-labelledby="living-lines-title">
+        <p class="eyebrow">Prototype B / Living Lines</p>
+        <h1 id="living-lines-title">Simple. Smooth. Interactive.</h1>
+        <p class="lede">
+          The lines stay readable. The motion lives in the words. The proof sits beside them,
+          not behind a disguise.
+        </p>
+        <p class="note">Move across a line, click it, and the details rebalance.</p>
       </section>
 
-      <section class="review-note" aria-label="Prototype note">
-        <p>This prototype is testing composition, reveal mechanics, and tone. It is not yet testing final typography, exact copy, or the deeper overlay system.</p>
+      <section class="living-stage" id="living-stage" aria-label="Living Lines interactive stage">
+        <div class="line-stack" role="list" aria-label="Profile lines">
+          <button class="living-line is-active" type="button" role="listitem" data-key="science" aria-pressed="true">
+            <span class="line-index">01</span>
+            <span class="line-body">
+              <span class="line-token" style="--tx:-1.1; --ty:-0.15">science</span>
+              <span class="line-token" style="--tx:-0.3; --ty:0.22">structure</span>
+              <span class="line-token" style="--tx:0.65; --ty:-0.08">meaning</span>
+            </span>
+            <span class="line-meta">2D-IR · structure</span>
+          </button>
+
+          <button class="living-line" type="button" role="listitem" data-key="strategy" aria-pressed="false">
+            <span class="line-index">02</span>
+            <span class="line-body">
+              <span class="line-token" style="--tx:-1.05; --ty:-0.12">strategy</span>
+              <span class="line-token" style="--tx:-0.12; --ty:0.2">judgment</span>
+              <span class="line-token" style="--tx:0.72; --ty:-0.05">leverage</span>
+            </span>
+            <span class="line-meta">diligence · capital</span>
+          </button>
+
+          <button class="living-line" type="button" role="listitem" data-key="build" aria-pressed="false">
+            <span class="line-index">03</span>
+            <span class="line-body">
+              <span class="line-token" style="--tx:-1.18; --ty:-0.1">build</span>
+              <span class="line-token" style="--tx:-0.2; --ty:0.18">systems</span>
+              <span class="line-token" style="--tx:0.62; --ty:-0.04">proof</span>
+            </span>
+            <span class="line-meta">CNC · iteration</span>
+          </button>
+
+          <button class="living-line" type="button" role="listitem" data-key="contact" aria-pressed="false">
+            <span class="line-index">04</span>
+            <span class="line-body">
+              <span class="line-token" style="--tx:-0.9; --ty:-0.12">direct</span>
+              <span class="line-token" style="--tx:-0.08; --ty:0.22">contact</span>
+              <span class="line-token" style="--tx:0.74; --ty:-0.05">only</span>
+            </span>
+            <span class="line-meta">email · CV</span>
+          </button>
+        </div>
+
+        <aside class="proof-panel" aria-live="polite" aria-atomic="true">
+          <p class="panel-kicker" id="panel-kicker">Selected proof</p>
+          <h2 class="panel-title" id="panel-title">Science</h2>
+          <p class="panel-copy" id="panel-copy">
+            Two-dimensional infrared spectroscopy, biological systems, and structure work on hIAPP.
+            The point is depth with method-level discipline.
+          </p>
+          <ul class="panel-bullets" id="panel-bullets">
+            <li>2D-IR on biological systems</li>
+            <li>selected publications and notes</li>
+            <li>technical detail without overexposure</li>
+          </ul>
+          <div class="panel-links" id="panel-links">
+            <a href="research.html">Research</a>
+            <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en">Scholar</a>
+          </div>
+        </aside>
       </section>
     </main>
   </div>
 
-  <script src="prototype.js"></script>
+  <script src="living-lines.js"></script>
 </body>
 </html>
