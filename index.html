@@ -1,103 +1,138 @@
 <!doctype html>
 <html lang="en">
+
+<script>
+  (function() {
+    try {
+      const KEY = 'theme';
+      const stored = localStorage.getItem(KEY);
+      const sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      const theme = stored || sys;
+      document.documentElement.setAttribute('data-theme', theme);
+      if (!stored) localStorage.setItem(KEY, theme);
+    } catch (_) {}
+  })();
+</script>
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Harrison J. Esterly — Living Lines</title>
-  <meta name="description" content="Living Lines: a clean, smooth, interactive personal site that keeps proof readable while the text moves." />
+  <title>Harrison J. Esterly</title>
+  <meta name="description" content="Selected work across science, strategy, and building."/>
+
+  <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+  <script>
+    (function ready(fn){document.readyState!=='loading'?fn():document.addEventListener('DOMContentLoaded',fn)})(function(){
+      if (window.feather) feather.replace({ 'stroke-width': 1.75 });
+    });
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="living-lines.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400&family=Raleway:wght@200;300;400&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="data:,">
 </head>
 <body>
-  <div class="page-shell">
-    <header class="topbar" aria-label="Site navigation">
-      <a class="brand" href="index.html">Harrison J. Esterly</a>
-      <nav class="toplinks">
-        <a href="research.html">Research</a>
-        <a href="consulting.html">Strategy</a>
-        <a href="MPCNC.html">Build</a>
-        <a href="contact.html">Contact</a>
-      </nav>
-    </header>
+  <header class="site-header">
+    <div class="container header-row">
+      <div class="header-left">
+        <a class="site-title" href="index.html">Harrison J. Esterly</a>
+        <nav class="site-nav">
+          <a href="index.html" aria-current="page">Home</a>
+          <a href="research.html">Research</a>
+          <a href="consulting.html">Strategy</a>
+          <a href="contact.html">Contact</a>
+          <a href="downloads/CV[esterly].pdf">CV</a>
+        </nav>
+      </div>
 
-    <main class="hero-grid">
-      <section class="intro" aria-labelledby="living-lines-title">
-        <p class="eyebrow">Prototype B / Living Lines</p>
-        <h1 id="living-lines-title">Simple. Smooth. Interactive.</h1>
-        <p class="lede">
-          The lines stay readable. The motion lives in the words. The proof sits beside them,
-          not behind a disguise.
-        </p>
-        <p class="note">Move across a line, click it, and the details rebalance.</p>
-      </section>
+      <div class="header-right">
+        <nav class="site-social" aria-label="Social links">
+          <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en" aria-label="Google Scholar" title="Google Scholar" rel="me">
+            <i data-feather="book-open"></i>
+          </a>
+          <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn" title="LinkedIn" rel="me">
+            <i data-feather="linkedin"></i>
+          </a>
+          <a href="https://github.com/Type2Enthusiasm" aria-label="GitHub" title="GitHub" rel="me">
+            <i data-feather="github"></i>
+          </a>
+        </nav>
 
-      <section class="living-stage" id="living-stage" aria-label="Living Lines interactive stage">
-        <div class="line-stack" role="list" aria-label="Profile lines">
-          <button class="living-line is-active" type="button" role="listitem" data-key="science" aria-pressed="true">
-            <span class="line-index">01</span>
-            <span class="line-body">
-              <span class="line-token" style="--tx:-1.1; --ty:-0.15">science</span>
-              <span class="line-token" style="--tx:-0.3; --ty:0.22">structure</span>
-              <span class="line-token" style="--tx:0.65; --ty:-0.08">meaning</span>
-            </span>
-            <span class="line-meta">2D-IR · structure</span>
-          </button>
+        <button class="theme-toggle" id="theme-toggle" aria-pressed="false"
+                aria-label="Toggle color theme" title="Toggle theme">
+          <svg class="sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <circle cx="12" cy="3" r="1.25"></circle>
+            <circle cx="12" cy="21" r="1.25"></circle>
+            <circle cx="3"  cy="12" r="1.25"></circle>
+            <circle cx="21" cy="12" r="1.25"></circle>
+            <circle cx="5.636"  cy="5.636"  r="1.25"></circle>
+            <circle cx="18.364" cy="5.636"  r="1.25"></circle>
+            <circle cx="5.636"  cy="18.364" r="1.25"></circle>
+            <circle cx="18.364" cy="18.364" r="1.25"></circle>
+          </svg>
+          <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
 
-          <button class="living-line" type="button" role="listitem" data-key="strategy" aria-pressed="false">
-            <span class="line-index">02</span>
-            <span class="line-body">
-              <span class="line-token" style="--tx:-1.05; --ty:-0.12">strategy</span>
-              <span class="line-token" style="--tx:-0.12; --ty:0.2">judgment</span>
-              <span class="line-token" style="--tx:0.72; --ty:-0.05">leverage</span>
-            </span>
-            <span class="line-meta">diligence · capital</span>
-          </button>
+  <main class="container content">
+    <section>
+      <p>I work where technical depth, judgment, and execution meet.</p>
 
-          <button class="living-line" type="button" role="listitem" data-key="build" aria-pressed="false">
-            <span class="line-index">03</span>
-            <span class="line-body">
-              <span class="line-token" style="--tx:-1.18; --ty:-0.1">build</span>
-              <span class="line-token" style="--tx:-0.2; --ty:0.18">systems</span>
-              <span class="line-token" style="--tx:0.62; --ty:-0.04">proof</span>
-            </span>
-            <span class="line-meta">CNC · iteration</span>
-          </button>
+      <p>My background is in chemistry and ultrafast spectroscopy. I’ve also spent time around investors, founders, and operators in early-stage biotechnology — usually in settings where the science still matters.</p>
 
-          <button class="living-line" type="button" role="listitem" data-key="contact" aria-pressed="false">
-            <span class="line-index">04</span>
-            <span class="line-body">
-              <span class="line-token" style="--tx:-0.9; --ty:-0.12">direct</span>
-              <span class="line-token" style="--tx:-0.08; --ty:0.22">contact</span>
-              <span class="line-token" style="--tx:0.74; --ty:-0.05">only</span>
-            </span>
-            <span class="line-meta">email · CV</span>
-          </button>
-        </div>
+      <p>This site is selective by design. It points to a few public artifacts — <a href="research.html">research</a>, a little <a href="MPCNC.html">build work</a>, and a direct way to connect — not the full map.</p>
 
-        <aside class="proof-panel" aria-live="polite" aria-atomic="true">
-          <p class="panel-kicker" id="panel-kicker">Selected proof</p>
-          <h2 class="panel-title" id="panel-title">Science</h2>
-          <p class="panel-copy" id="panel-copy">
-            Two-dimensional infrared spectroscopy, biological systems, and structure work on hIAPP.
-            The point is depth with method-level discipline.
-          </p>
-          <ul class="panel-bullets" id="panel-bullets">
-            <li>2D-IR on biological systems</li>
-            <li>selected publications and notes</li>
-            <li>technical detail without overexposure</li>
-          </ul>
-          <div class="panel-links" id="panel-links">
-            <a href="research.html">Research</a>
-            <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en">Scholar</a>
-          </div>
-        </aside>
-      </section>
-    </main>
-  </div>
+      <p>I’m interested in hard problems, asymmetric opportunities, and people with range. If there’s a reason to talk, <a href="mailto:HarrisonJEsterly@gmail.com">email is best</a>.</p>
 
-  <script src="living-lines.js"></script>
+      <div class="social">
+        <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en" aria-label="Google Scholar">Google Scholar</a>
+        <a href="https://github.com/Type2Enthusiasm" aria-label="GitHub">GitHub</a>
+        <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn">LinkedIn</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container small">
+      <div>2026 Harrison J. Esterly · <span class="meta">Minimal by design.</span></div>
+    </div>
+  </footer>
+
+  <script>
+  (function(){
+    const KEY = 'theme';
+    const root = document.documentElement;
+    const btn  = document.getElementById('theme-toggle');
+    if (!btn) return;
+
+    function apply(theme){
+      root.setAttribute('data-theme', theme);
+      btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+      try { localStorage.setItem(KEY, theme); } catch(_) {}
+    }
+
+    apply(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+
+    btn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      apply(current === 'dark' ? 'light' : 'dark');
+    });
+
+    try {
+      const m = window.matchMedia('(prefers-color-scheme: dark)');
+      m.addEventListener?.('change', e => {
+        if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light');
+       });
+     } catch (_) {}
+    })();
+  </script>
 </body>
 </html>
