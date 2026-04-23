@@ -1,163 +1,99 @@
 <!doctype html>
 <html lang="en">
-
-  <!-- FOUC prevention: set theme before CSS loads -->
-<script>
-  (function() {
-    try {
-      const KEY = 'theme';
-      // 1) Read user's last choice
-      const stored = localStorage.getItem(KEY);
-      // 2) If none, fall back to system preference (correct direction)
-      const sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      const theme = stored || sys;
-      document.documentElement.setAttribute('data-theme', theme);
-      // Optional: keep storage aligned on first load with system default
-      if (!stored) localStorage.setItem(KEY, theme);
-    } catch (_) {}
-  })();
-</script>
-
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Harrison J. Esterly — Home</title>
-  <meta name="description" content="Ultrafast spectroscopy PhD building science → startups/VC."/>
-
-  <!-- feather icons - scaleable and good lookin'-->
-  <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
-<script>
-  (function ready(fn){document.readyState!=='loading'?fn():document.addEventListener('DOMContentLoaded',fn)})(function(){
-    if (window.feather) feather.replace({ 'stroke-width': 1.75 });
-  });
-</script>
-
-
-  <!-- Fonts: Ubuntu body + Raleway headings (thin) -->
+  <title>Harrison J. Esterly — Prototype A</title>
+  <meta name="description" content="Prototype A — quiet rupture: a calm personal site that opens into science, strategy, build, and contact." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400&family=Raleway:wght@200;300;400&display=swap" rel="stylesheet">
-
-  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="prototype.css" />
   <link rel="icon" href="data:,">
 </head>
 <body>
-  <header class="site-header">
-    <div class="container header-row">
-      <div class="header-left">
-        <a class="site-title" href="index.html">Harrison J. Esterly</a>
-        <nav class="site-nav">
-          <a href="index.html" aria-current="page">Home</a>
-          <a href="research.html">Research</a>
-          <a href="consulting.html">Biotech Consulting</a>
-          <a href="contact.html">Contact</a>
-          <a href="downloads/CV[esterly].pdf">CV</a>
-        </nav>
-      </div>
-      
+  <div class="page-shell">
+    <header class="utility-bar" aria-label="Site utilities">
+      <a class="utility-name" href="index.html">Harrison J. Esterly</a>
+      <nav class="utility-links">
+        <a href="research.html">Research</a>
+        <a href="consulting.html">Consulting</a>
+        <a href="MPCNC.html">Build</a>
+        <a href="downloads/CV[esterly].pdf">CV</a>
+      </nav>
+    </header>
 
-      <div class="header-right">
-        <nav class="site-social" aria-label="Social links">
-          <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en" aria-label="Google Scholar" title="Google Scholar" rel="me">
-            <i data-feather="book-open"></i>
-          </a>
-          <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn" title="LinkedIn" rel="me">
-            <i data-feather="linkedin"></i>
-          </a>
-          <a href="https://github.com/Type2Enthusiasm" aria-label="GitHub" title="GitHub" rel="me">
-            <i data-feather="github"></i>
-          </a>
-        </nav>
-    
-        <!-- Theme toggle on the RIGHT -->
-        <button class="theme-toggle" id="theme-toggle" aria-pressed="false"
-                aria-label="Toggle color theme" title="Toggle theme">
-          <!-- Sun (uniform dots) -->
-          <svg class="sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <!-- core -->
-            <circle cx="12" cy="12" r="4"></circle>
-            <!-- rays -->
-            <circle cx="12" cy="3" r="1.25"></circle>   <!-- top -->
-            <circle cx="12" cy="21" r="1.25"></circle>  <!-- bottom -->
-            <circle cx="3"  cy="12" r="1.25"></circle>  <!-- left -->
-            <circle cx="21" cy="12" r="1.25"></circle>  <!-- right -->
-            <circle cx="5.636"  cy="5.636"  r="1.25"></circle>  <!-- top-left -->
-            <circle cx="18.364" cy="5.636"  r="1.25"></circle>  <!-- top-right -->
-            <circle cx="5.636"  cy="18.364" r="1.25"></circle>  <!-- bottom-left -->
-            <circle cx="18.364" cy="18.364" r="1.25"></circle>  <!-- bottom-right -->
-          </svg>
-          <!-- Moon (shown in dark mode) -->
-          <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-  </header>
+    <main>
+      <section class="seam-stage" id="seam-stage" style="--open-progress: 0;">
+        <div class="surface surface-left" aria-hidden="true"></div>
+        <div class="surface surface-right" aria-hidden="true"></div>
+        <div class="seam-line" aria-hidden="true"></div>
 
-  <main class="container content">
-    <section>
+        <div class="hero-copy">
+          <p class="eyebrow">Prototype A / quiet rupture</p>
+          <h1>Harrison J. Esterly</h1>
+          <p class="thesis">I work where technical depth meets leverage.</p>
+          <p class="subcopy">Science, strategy, and built things — held back until invited forward.</p>
 
-      <p>I’m an early-career Ph.D. chemist that is excited by innovation, investing, and value creation.</p>
-    
-      <p>I grew up in rural North Carolina and went on to pursue a Ph.D. in Chemistry at UW–Madison (2021–2025). 
-        My graduate research was a blend of physical chemistry and biochemistry, where I applied ultrafast two-dimensional infrared spectroscopy to biological systems. 
-        I deeply value and remain grateful for my academic mentors: <a href='https://scholar.google.com/citations?user=ypz5jZ0AAAAJ&hl=en&oi=ao'>Prof. Martin Zanni</a>, <a href = 'https://scholar.google.com/citations?hl=en&user=TJ0hb48AAAAJ'>Prof. Gary Pielak</a>, and <a href = 'https://dcfs.appstate.edu/directory/dr-brooke-e-christian'>Prof. Brooke Christian</a>.</p>
-    
-      <p>Beyond the lab, I’ve worked with <a href="https://wisinvpartners.com/">Wisconsin Investment Partners</a> and <a href="https://www.2floventures.com/">2Flo Ventures</a> to diligence and advise investments in early-stage biotechnology companies. 
-        Alongside this, I act as an independent consultant, supporting biotech startups with operations, strategy, and drug development.</p>
-    
-      <p>I spend my free time going on adventures with my partner, hands-on projects (such as <a href="MPCNC.html">machining with my home-built CNC</a>), and training in running, weightlifting, and billiards.
-        In quieter moments, I enjoy reading, learning about emerging technologies, and studying companies.</p>
-        
-      <p>I love meeting new people and continuously learning. 
-        If you’d like to connect, please don’t hesitate to <a href="mailto:HarrisonJEsterly@gmail.com">say hello!</a> </p>
-          <div class="social">
-        <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en" aria-label="Google Scholar">Google Scholar</a>
-        <a href="https://github.com/Type2Enthusiasm" aria-label="GitHub">GitHub</a>
-        <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn">LinkedIn</a>
-      </div>
-    </section>
+          <div class="seam-control">
+            <button class="seam-handle" id="seam-handle" type="button" aria-expanded="false" aria-controls="revealed-grid">
+              <span class="handle-tab" aria-hidden="true"></span>
+              <span class="handle-label">pull to open</span>
+            </button>
+            <p class="handle-note">Drag the tab or click once. This is a concept study, not final copy.</p>
+          </div>
+        </div>
 
-  </main>
+        <section class="revealed-grid" id="revealed-grid" aria-label="Revealed profile areas">
+          <article class="cluster cluster-science">
+            <p class="cluster-kicker">Science</p>
+            <h2>Ultrafast spectroscopy, biological systems, and hard-to-observe structure.</h2>
+            <p>Work centered on two-dimensional infrared spectroscopy, including structural work on toxic hIAPP oligomers and method-level rigor in biophysical measurement.</p>
+            <div class="cluster-links">
+              <a href="research.html">Selected research</a>
+              <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en">Scholar</a>
+            </div>
+          </article>
 
-  <footer>
-    <div class="container small">
-      <div> 2025 Harrison J. Esterly · <span class="meta">Template inspired by Ezhil-style minimalism.</span></div>
-    </div>
-  </footer>
+          <article class="cluster cluster-strategy">
+            <p class="cluster-kicker">Strategy</p>
+            <h2>Moving between technical diligence, financing logic, and execution.</h2>
+            <p>Biotech work across diligence, non-dilutive funding, R&amp;D roadmaps, investor materials, and operator support — without flattening the science.</p>
+            <div class="cluster-links">
+              <a href="consulting.html">Consulting</a>
+              <a href="contact.html">Reach out</a>
+            </div>
+          </article>
 
-  <!-- Toggle logic -->
-  <script>
-  (function(){
-    const KEY = 'theme';
-    const root = document.documentElement;
-    const btn  = document.getElementById('theme-toggle');
-    if (!btn) return;
+          <article class="cluster cluster-build">
+            <p class="cluster-kicker">Build</p>
+            <h2>Not only analytical. Also physical, procedural, and hands-on.</h2>
+            <p>Home-built CNC work, firmware/config experimentation, and practical projects that keep thinking tied to objects, tolerances, and iteration.</p>
+            <div class="cluster-links">
+              <a href="MPCNC.html">Project artifacts</a>
+              <a href="https://github.com/Type2Enthusiasm">GitHub</a>
+            </div>
+          </article>
 
-    function apply(theme){
-      root.setAttribute('data-theme', theme);
-      btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-      try { localStorage.setItem(KEY, theme); } catch(_) {}
-    }
+          <article class="cluster cluster-contact">
+            <p class="cluster-kicker">Contact</p>
+            <h2>Direct works better than performative.</h2>
+            <p>Email is the cleanest path. LinkedIn, GitHub, and the CV stay available as proof, not as the main event.</p>
+            <div class="cluster-links">
+              <a href="mailto:HarrisonJEsterly@gmail.com">Email</a>
+              <a href="https://www.linkedin.com/in/harrison-esterly/">LinkedIn</a>
+              <a href="downloads/CV[esterly].pdf">CV</a>
+            </div>
+          </article>
+        </section>
+      </section>
 
-    // Initialize from current attribute (already set in <head> script)
-    apply(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+      <section class="review-note" aria-label="Prototype note">
+        <p>This prototype is testing composition, reveal mechanics, and tone. It is not yet testing final typography, exact copy, or the deeper overlay system.</p>
+      </section>
+    </main>
+  </div>
 
-    // Click to toggle
-    btn.addEventListener('click', () => {
-      const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-      apply(current === 'dark' ? 'light' : 'dark');
-    });
-
-    // Optional: react if system theme changes (only when user hasn’t chosen)
-    try {
-      const m = window.matchMedia('(prefers-color-scheme: dark)');
-      m.addEventListener?.('change', e => {
-        if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light');
-       });
-     } catch (_) {}
-    })();
-  </script> 
+  <script src="prototype.js"></script>
 </body>
 </html>
