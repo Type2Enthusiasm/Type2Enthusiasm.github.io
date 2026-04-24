@@ -1,28 +1,24 @@
-# Minimal Personal Website (HTML + CSS)
+# Harrison J. Esterly Website
 
-A small, fast, no‑JS template inspired by Jeffrey G. Wang’s clean layout (built on the Hugo “Ezhil” theme). This version is written from scratch in plain HTML/CSS and is free to reuse.
+Simple static personal site for Harrison J. Esterly.
 
 ## Files
-- `index.html` — Home page
-- `research.html` — Publications and notes
-- `projects.html` — Projects listing
-- `writing.html` — Posts/essays
-- `teaching.html` — Teaching/mentoring
-- `style.css` — Shared styles
+- `index.html` — homepage
+- `research.html` — research background and publications
+- `consulting.html` — strategy / consulting page
+- `contact.html` — contact page
+- `MPCNC.html` — CNC build page
+- `style.css` — shared styles
+- `downloads/` — CV and downloadable files
 
-## Customize
-- Replace “Harrison J. Esterly” and the placeholder text with your info.
-- Update social links in `index.html`.
-- Add real posts/items under each page.
-- Colors and spacing use CSS variables at the top of `style.css` — tweak to taste.
-- The template supports dark mode using `prefers-color-scheme` automatically.
+## Run locally
+Open `index.html` in a browser, or serve the folder with a simple static server:
 
-## How to Run
-Open `index.html` in your browser. To deploy:
-1. Create a new GitHub repo (e.g., `harrison-site`).
-2. Upload these files to the repo root.
-3. In repo Settings → Pages, set “Deploy from branch” and choose `main` / root.
-4. Your site will appear at `https://<username>.github.io/<repo>/`.
+```bash
+python3 -m http.server
+```
 
-## License
-MIT — do whatever you like. Attribution appreciated but not required.
+## Notes
+- Plain HTML/CSS with a small Feather icons script
+- Single fixed oxblood/cream palette
+- No theme toggle or prototype variants
