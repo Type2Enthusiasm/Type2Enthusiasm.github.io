@@ -7,6 +7,8 @@ const PHYSICS = {
   floorFriction: 0.85,
   grabRadius: 24,
   dragThreshold: 20,
+  releaseStretch: 1.16,
+  releaseImpulse: 0.22,
   substepClamp: 1 / 30
 };
 
@@ -45,91 +47,18 @@ function initPuzzle() {
     rafId: 0,
     lastTime: 0,
     pointerId: null,
+    pointerStartX: 0,
+    pointerStartY: 0,
     dragDistance: 0,
     grabTarget: null,
     grabOffsetX: 0,
     grabOffsetY: 0,
     hiddenElements: new Set(),
     hangingScene: null,
-    runScene: null,
-    measureText: null
+    runScene: null
   };
 
-  Promise.all([loadPretextMeasure(), document.fonts ? document.fonts.ready.catch(() => undefined) : Promise.resolve()])
-    .then(([measureText]) => {
-      state.measureText = measureText;
-      bindEvents(state);
-    })
-    .catch(() => {
-      state.measureText = createCanvasMeasure();
-      bindEvents(state);
-    });
-}
-
-/**
- * Try loading a pinned Pretext build from esm.sh and fall back to canvas text measurement.
- * Conservative default: canvas metrics are the baseline path if import shape or network differs.
- * @returns {Promise<(font: string, text: string) => number>}
- */
-async function loadPretextMeasure() {
-  try {
-    const mod = await import("https://esm.sh/pretext@0.0.4");
-    const candidate = mod?.default ?? mod?.Pretext ?? mod;
-    if (typeof candidate === "function") {
-      return createPretextMeasure(candidate);
-    }
-    if (candidate && typeof candidate.measureText === "function") {
-      return (font, text) => {
-        const result = candidate.measureText(text, { font });
-        return typeof result === "number" ? result : Number(result?.width) || 0;
-      };
-    }
-    console.warn("Puzzle: Pretext import succeeded but no compatible API was found. Falling back to canvas.measureText.");
-  } catch (error) {
-    console.warn("Puzzle: unable to load Pretext from esm.sh, using canvas.measureText fallback.", error);
-  }
-  return createCanvasMeasure();
-}
-
-/**
- * Create a measurement function using a Pretext constructor-style API.
- * @param {Function} PretextCtor
- * @returns {(font: string, text: string) => number}
- */
-function createPretextMeasure(PretextCtor) {
-  const cache = new Map();
-  return (font, text) => {
-    const key = `${font}::${text}`;
-    if (cache.has(key)) {
-      return cache.get(key);
-    }
-
-    let width = 0;
-    try {
-      const instance = new PretextCtor({ font, text });
-      width = Number(instance?.width ?? instance?.measure?.().width ?? 0);
-    } catch (error) {
-      width = 0;
-    }
-
-    if (!width) {
-      width = createCanvasMeasure()(font, text);
-    }
-    cache.set(key, width);
-    return width;
-  };
-}
-
-function createCanvasMeasure() {
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  return (font, text) => {
-    if (!ctx) {
-      return text.length * 8;
-    }
-    ctx.font = font;
-    return ctx.measureText(text).width;
-  };
+  bindEvents(state);
 }
 
 function bindEvents(state) {
@@ -152,15 +81,15 @@ function bindEvents(state) {
 }
 
 function startHanging(state) {
-  const linkedInMetrics = getInlineTextMetrics(state.proseLinkedIn, state.measureText);
-  if (!linkedInMetrics) {
+  const linkedInGlyphs = collectElementGlyphs(state.proseLinkedIn).filter((glyph) => glyph.draw);
+  if (linkedInGlyphs.length < 8) {
     return;
   }
 
   setCanvasActive(state, true);
   setHidden(state, state.proseLinkedIn, true);
 
-  state.hangingScene = buildHangingScene(state, linkedInMetrics);
+  state.hangingScene = buildHangingScene(linkedInGlyphs);
   state.runScene = null;
   state.stage = "hanging";
   state.main.dataset.puzzleStage = "hanging";
@@ -168,10 +97,10 @@ function startHanging(state) {
   startLoop(state);
 }
 
-function startUnwound(state) {
+function startUnwound(state, transition = null) {
   const runs = [...state.main.querySelectorAll("[data-puzzle-run]")];
   const items = runs
-    .map((element) => buildRunItem(element, state.measureText))
+    .map((element) => buildRunItem(element))
     .filter(Boolean);
 
   if (!items.length) {
@@ -182,9 +111,24 @@ function startUnwound(state) {
     setHidden(state, item.element, true);
   }
 
+  state.hangingScene = null;
   state.runScene = { items };
   state.stage = "unwound";
   state.main.dataset.puzzleStage = "unwound";
+
+  if (transition) {
+    const target = findTransitionNode(items, transition.text, transition.clientX, transition.clientY);
+    if (target) {
+      unlockNode(target, true);
+      state.pointerId = transition.pointerId;
+      state.pointerStartX = transition.clientX;
+      state.pointerStartY = transition.clientY;
+      state.dragDistance = PHYSICS.dragThreshold;
+      state.grabTarget = target;
+      state.grabOffsetX = target.x - transition.clientX;
+      state.grabOffsetY = target.y - transition.clientY;
+    }
+  }
 }
 
 function resetPuzzle(state) {
@@ -284,7 +228,7 @@ function updateScene(state, dt) {
   }
   if (state.stage === "unwound" && state.runScene) {
     for (const item of state.runScene.items) {
-      stepChains(item.nodes, dt, bounds, PHYSICS.unwoundIterations, false);
+      stepRunItem(item, dt, bounds);
     }
   }
 }
@@ -303,129 +247,193 @@ function drawScene(state) {
   }
 }
 
-function buildHangingScene(state, metrics) {
-  const detached = "edIn";
-  const fixed = "Link";
-  const linkWidth = state.measureText(metrics.font, fixed);
-  const detachedWidths = [...detached].map((char) => state.measureText(metrics.font, char));
-  const anchorX = metrics.left + linkWidth;
-  const baselineY = metrics.baseline;
-  const nodes = [];
-  const spacing = 2;
-  let x = anchorX;
+function buildHangingScene(linkedInGlyphs) {
+  const fixedGlyphs = linkedInGlyphs.slice(0, 4).map((glyph) => ({ ...glyph }));
+  const detachedGlyphs = linkedInGlyphs.slice(4);
+  const nodes = detachedGlyphs.map((glyph) => createNode({
+    x: glyph.x,
+    y: glyph.y,
+    width: glyph.width,
+    char: glyph.char,
+    font: glyph.font,
+    color: glyph.color,
+    glyphOffsetY: glyph.glyphOffsetY
+  }));
 
-  for (let index = 0; index < detached.length; index += 1) {
-    const width = detachedWidths[index];
-    const node = createNode(x + width / 2, baselineY - metrics.fontSize * 0.7, width, detached[index]);
-    nodes.push(node);
-    x += width + spacing;
-  }
+  const anchorSource = fixedGlyphs[fixedGlyphs.length - 1];
+  const anchor = {
+    x: anchorSource.x,
+    y: anchorSource.y,
+    pinned: true
+  };
 
   for (let index = 0; index < nodes.length; index += 1) {
-    const previous = index === 0 ? { x: anchorX, y: baselineY - metrics.fontSize * 0.7, pinned: true } : nodes[index - 1];
+    const previous = index === 0 ? anchor : nodes[index - 1];
     nodes[index].restLength = distance(previous.x, previous.y, nodes[index].x, nodes[index].y);
   }
 
   return {
-    font: metrics.font,
-    color: metrics.color,
-    fixedText: fixed,
-    fixedX: metrics.left,
-    baselineY,
-    anchorX,
-    anchorY: baselineY - metrics.fontSize * 0.7,
-    glyphOffsetY: metrics.fontSize * 0.22,
-    anchor: { x: anchorX, y: baselineY - metrics.fontSize * 0.7, pinned: true },
+    anchor,
+    fixedGlyphs,
     letters: nodes
   };
 }
 
-function buildRunItem(element, measureText) {
-  const metrics = getBlockTextMetrics(element);
-  if (!metrics || !metrics.text.trim()) {
+function buildRunItem(element) {
+  const glyphs = collectElementGlyphs(element);
+  if (!glyphs.length) {
     return null;
   }
 
-  const chars = [];
-  let cursorX = metrics.left;
-  const gap = 0.5;
+  const nodes = glyphs.map((glyph, index) => {
+    const node = createNode({
+      x: glyph.x,
+      y: glyph.y,
+      width: glyph.width,
+      char: glyph.char,
+      font: glyph.font,
+      color: glyph.color,
+      glyphOffsetY: glyph.glyphOffsetY,
+      homeX: glyph.x,
+      homeY: glyph.y,
+      homeLocked: true,
+      draw: glyph.draw,
+      index
+    });
+    return node;
+  });
 
-  for (const char of metrics.text) {
-    const width = char === " " ? measureText(metrics.font, " ") : measureText(metrics.font, char);
-    const node = createNode(cursorX + width / 2, metrics.baseline - metrics.fontSize * 0.7, width, char);
-    chars.push(node);
-    cursorX += width + gap;
-  }
-
-  for (let index = 1; index < chars.length; index += 1) {
-    chars[index].restLength = distance(chars[index - 1].x, chars[index - 1].y, chars[index].x, chars[index].y);
-  }
-
-  const scatter = Math.min(10, metrics.fontSize * 0.35);
-  for (let index = 0; index < chars.length; index += 1) {
-    if (chars[index].char === " ") {
-      continue;
+  for (let index = 0; index < nodes.length; index += 1) {
+    const previous = nodes[index - 1];
+    nodes[index].prev = previous || null;
+    if (previous) {
+      previous.next = nodes[index];
+      nodes[index].restLength = distance(previous.x, previous.y, nodes[index].x, nodes[index].y);
+    } else {
+      nodes[index].restLength = 0;
     }
-    chars[index].prevX -= (Math.random() - 0.5) * scatter;
-    chars[index].prevY -= Math.random() * scatter;
   }
 
   return {
     element,
-    font: metrics.font,
-    color: metrics.color,
-    glyphOffsetY: metrics.fontSize * 0.22,
-    nodes: chars
+    nodes
   };
 }
 
-function getInlineTextMetrics(element, measureText) {
-  const rect = element.getBoundingClientRect();
-  if (!rect.width || !rect.height) {
+function collectElementGlyphs(element) {
+  const textNodes = getTextNodes(element);
+  const glyphs = [];
+
+  for (const textNode of textNodes) {
+    const parent = textNode.parentElement;
+    if (!parent) {
+      continue;
+    }
+
+    const style = getComputedStyle(parent);
+    const font = style.font;
+    const color = style.color;
+    const fontSize = parseFloat(style.fontSize) || 16;
+    const graphemes = segmentText(textNode.textContent || "");
+    let offset = 0;
+
+    for (const grapheme of graphemes) {
+      const start = offset;
+      const end = start + grapheme.length;
+      offset = end;
+
+      const rect = getTextRect(textNode, start, end);
+      if (!rect) {
+        continue;
+      }
+
+      const width = Math.max(rect.width, fontSize * 0.18);
+      glyphs.push({
+        char: grapheme,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height * 0.78 - fontSize * 0.7,
+        width,
+        font,
+        color,
+        glyphOffsetY: fontSize * 0.22,
+        draw: /\S/.test(grapheme)
+      });
+    }
+  }
+
+  return glyphs;
+}
+
+function getTextNodes(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.textContent || !node.textContent.length) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+
+  const nodes = [];
+  let current = walker.nextNode();
+  while (current) {
+    nodes.push(current);
+    current = walker.nextNode();
+  }
+  return nodes;
+}
+
+function segmentText(text) {
+  if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return [...segmenter.segment(text)].map((segment) => segment.segment);
+  }
+  return Array.from(text);
+}
+
+function getTextRect(textNode, start, end) {
+  const range = document.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, end);
+
+  const rects = [...range.getClientRects()].filter((rect) => rect.width || rect.height);
+  range.detach?.();
+  if (!rects.length) {
     return null;
   }
-  const style = getComputedStyle(element);
-  const font = style.font;
-  const fontSize = parseFloat(style.fontSize) || 16;
-  const width = measureText(font, element.textContent || "");
+
+  const first = rects[0];
+  const last = rects[rects.length - 1];
   return {
-    left: rect.left + (rect.width - width) / 2,
-    baseline: rect.top + rect.height * 0.78,
-    font,
-    fontSize,
-    color: style.color
+    left: first.left,
+    top: Math.min(...rects.map((rect) => rect.top)),
+    width: Math.max(last.right - first.left, first.width),
+    height: Math.max(...rects.map((rect) => rect.height))
   };
 }
 
-function getBlockTextMetrics(element) {
-  const rect = element.getBoundingClientRect();
-  if (!rect.width || !rect.height) {
-    return null;
-  }
-  const style = getComputedStyle(element);
+function createNode(options) {
+  const x = options.homeX ?? options.x;
+  const y = options.homeY ?? options.y;
   return {
-    left: rect.left,
-    baseline: rect.top + rect.height * 0.8,
-    font: style.font,
-    fontSize: parseFloat(style.fontSize) || 16,
-    color: style.color,
-    text: normalizeWhitespace(element.textContent || "")
-  };
-}
-
-function normalizeWhitespace(text) {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-function createNode(x, y, width, char) {
-  return {
-    x,
-    y,
-    prevX: x,
-    prevY: y,
-    width,
-    char,
-    restLength: width
+    x: options.x,
+    y: options.y,
+    prevX: options.x,
+    prevY: options.y,
+    width: options.width,
+    char: options.char,
+    font: options.font,
+    color: options.color,
+    glyphOffsetY: options.glyphOffsetY ?? 0,
+    restLength: options.restLength ?? options.width,
+    pinned: options.pinned ?? false,
+    homeX: x,
+    homeY: y,
+    homeLocked: options.homeLocked ?? false,
+    draw: options.draw ?? true,
+    prev: null,
+    next: null,
+    index: options.index ?? 0
   };
 }
 
@@ -468,15 +476,117 @@ function stepChains(nodes, dt, bounds, iterations, hangingOnly, anchor = null) {
   }
 }
 
+function stepRunItem(item, dt, bounds) {
+  const ceiling = bounds.ceiling;
+  const floor = bounds.floor;
+  const walls = bounds.walls;
+
+  for (const node of item.nodes) {
+    if (node.pinned || node.homeLocked) {
+      node.x = node.homeX;
+      node.y = node.homeY;
+      node.prevX = node.homeX;
+      node.prevY = node.homeY;
+      continue;
+    }
+
+    const velocityX = (node.x - node.prevX) * PHYSICS.damping;
+    const velocityY = (node.y - node.prevY) * PHYSICS.damping;
+    node.prevX = node.x;
+    node.prevY = node.y;
+    node.x += velocityX;
+    node.y += velocityY + PHYSICS.gravity * dt * dt;
+  }
+
+  for (let iteration = 0; iteration < PHYSICS.unwoundIterations; iteration += 1) {
+    for (let index = 1; index < item.nodes.length; index += 1) {
+      const previous = item.nodes[index - 1];
+      const current = item.nodes[index];
+      solveDistance(previous, current, current.restLength);
+    }
+
+    for (const node of item.nodes) {
+      if (node.pinned || node.homeLocked) {
+        node.x = node.homeX;
+        node.y = node.homeY;
+        continue;
+      }
+      constrainNode(node, ceiling, floor, walls, false);
+    }
+  }
+
+  propagateRelease(item.nodes);
+}
+
+function propagateRelease(nodes) {
+  for (const node of nodes) {
+    if (!node.homeLocked) {
+      continue;
+    }
+
+    const prevStretch = getEdgeStretch(node.prev, node);
+    const nextStretch = getEdgeStretch(node, node.next);
+    if (Math.max(prevStretch, nextStretch) < PHYSICS.releaseStretch) {
+      continue;
+    }
+
+    unlockNode(node);
+    if (node.prev && node.prev.homeLocked && prevStretch >= PHYSICS.releaseStretch + 0.05) {
+      unlockNode(node.prev);
+    }
+    if (node.next && node.next.homeLocked && nextStretch >= PHYSICS.releaseStretch + 0.05) {
+      unlockNode(node.next);
+    }
+  }
+}
+
+function getEdgeStretch(a, b) {
+  if (!a || !b) {
+    return 0;
+  }
+  const rest = Math.max(b.restLength, 0.0001);
+  const current = distance(a.x, a.y, b.x, b.y);
+  return current / rest;
+}
+
+function unlockNode(node, immediate = false) {
+  if (!node || !node.homeLocked) {
+    return;
+  }
+
+  node.homeLocked = false;
+  if (immediate) {
+    return;
+  }
+
+  const velocityX = node.x - node.prevX;
+  const velocityY = node.y - node.prevY;
+  node.prevX = node.x - velocityX * PHYSICS.releaseImpulse;
+  node.prevY = node.y - velocityY * PHYSICS.releaseImpulse;
+}
+
 function solveDistance(a, b, targetLength) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const dist = Math.hypot(dx, dy) || 0.0001;
   const diff = (dist - targetLength) / dist;
 
-  if (a.pinned) {
+  const aLocked = a.pinned || a.homeLocked;
+  const bLocked = b.pinned || b.homeLocked;
+
+  if (aLocked && bLocked) {
+    return;
+  }
+
+  if (aLocked) {
     b.x -= dx * diff;
     b.y -= dy * diff;
+    return;
+  }
+
+  if (bLocked) {
+    a.x += dx * diff;
+    a.y += dy * diff;
     return;
   }
 
@@ -513,16 +623,11 @@ function constrainNode(node, ceiling, floor, walls, hangingOnly) {
 
 function drawHangingScene(ctx, scene) {
   ctx.save();
-  ctx.font = scene.font;
-  ctx.fillStyle = scene.color;
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText(scene.fixedText, scene.fixedX, scene.baselineY);
-
-  ctx.strokeStyle = scene.color;
+  ctx.strokeStyle = scene.fixedGlyphs[0]?.color ?? "currentColor";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
-  let previousX = scene.anchorX;
-  let previousY = scene.anchorY;
+  let previousX = scene.anchor.x;
+  let previousY = scene.anchor.y;
   for (const node of scene.letters) {
     ctx.moveTo(previousX, previousY);
     ctx.lineTo(node.x, node.y);
@@ -531,24 +636,38 @@ function drawHangingScene(ctx, scene) {
   }
   ctx.stroke();
 
+  for (const glyph of scene.fixedGlyphs) {
+    ctx.save();
+    ctx.font = glyph.font;
+    ctx.fillStyle = glyph.color;
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(glyph.char, glyph.x - glyph.width / 2, glyph.y + glyph.glyphOffsetY);
+    ctx.restore();
+  }
+
   for (const node of scene.letters) {
-    ctx.fillText(node.char, node.x - node.width / 2, node.y + scene.glyphOffsetY);
+    ctx.save();
+    ctx.font = node.font;
+    ctx.fillStyle = node.color;
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(node.char, node.x - node.width / 2, node.y + node.glyphOffsetY);
+    ctx.restore();
   }
   ctx.restore();
 }
 
 function drawRunItem(ctx, item) {
-  ctx.save();
-  ctx.font = item.font;
-  ctx.fillStyle = item.color;
-  ctx.textBaseline = "alphabetic";
   for (const node of item.nodes) {
-    if (node.char === " ") {
+    if (!node.draw) {
       continue;
     }
-    ctx.fillText(node.char, node.x - node.width / 2, node.y + item.glyphOffsetY);
+    ctx.save();
+    ctx.font = node.font;
+    ctx.fillStyle = node.color;
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(node.char, node.x - node.width / 2, node.y + node.glyphOffsetY);
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 function getBounds(state) {
@@ -576,11 +695,17 @@ function handlePointerDown(state, event) {
   }
 
   state.pointerId = event.pointerId;
+  state.pointerStartX = event.clientX;
+  state.pointerStartY = event.clientY;
   state.grabTarget = target;
   state.dragDistance = 0;
   state.grabOffsetX = target.x - event.clientX;
   state.grabOffsetY = target.y - event.clientY;
   state.canvas.setPointerCapture(event.pointerId);
+
+  if (state.stage === "unwound") {
+    unlockNode(target, true);
+  }
 }
 
 function handlePointerMove(state, event) {
@@ -590,19 +715,34 @@ function handlePointerMove(state, event) {
 
   const nextX = event.clientX + state.grabOffsetX;
   const nextY = event.clientY + state.grabOffsetY;
-  state.dragDistance += Math.hypot(nextX - state.grabTarget.x, nextY - state.grabTarget.y);
-  state.grabTarget.x = nextX;
-  state.grabTarget.y = nextY;
+  state.dragDistance = distance(state.pointerStartX, state.pointerStartY, event.clientX, event.clientY);
 
   if (state.stage === "hanging" && state.dragDistance > PHYSICS.dragThreshold) {
-    releasePointer(state);
-    startUnwound(state);
+    const transition = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      text: state.grabTarget.char
+    };
+    startUnwound(state, transition);
+    state.canvas.setPointerCapture(event.pointerId);
   }
+
+  if (!state.grabTarget) {
+    return;
+  }
+
+  state.grabTarget.x = nextX;
+  state.grabTarget.y = nextY;
 }
 
 function releasePointer(state) {
   if (state.pointerId !== null && state.canvas.hasPointerCapture(state.pointerId)) {
     state.canvas.releasePointerCapture(state.pointerId);
+  }
+  if (state.grabTarget && state.stage === "unwound" && !state.grabTarget.pinned) {
+    state.grabTarget.prevX = state.grabTarget.x;
+    state.grabTarget.prevY = state.grabTarget.y;
   }
   state.pointerId = null;
   state.grabTarget = null;
@@ -616,7 +756,7 @@ function findNearestNode(state, x, y) {
   }
   if (state.stage === "unwound" && state.runScene) {
     for (const item of state.runScene.items) {
-      pools.push(...item.nodes.filter((node) => node.char !== " "));
+      pools.push(...item.nodes.filter((node) => node.draw));
     }
   }
 
@@ -627,6 +767,50 @@ function findNearestNode(state, x, y) {
     if (d < bestDistance) {
       bestDistance = d;
       winner = node;
+    }
+  }
+  return winner;
+}
+
+function findTransitionNode(items, text, x, y) {
+  const candidates = [];
+  for (const item of items) {
+    for (const node of item.nodes) {
+      if (node.char === text && node.draw) {
+        candidates.push(node);
+      }
+    }
+  }
+
+  if (!candidates.length) {
+    return findClosestDrawnNode(items, x, y);
+  }
+
+  let winner = null;
+  let bestDistance = Infinity;
+  for (const node of candidates) {
+    const d = distance(node.x, node.y, x, y);
+    if (d < bestDistance) {
+      bestDistance = d;
+      winner = node;
+    }
+  }
+  return winner;
+}
+
+function findClosestDrawnNode(items, x, y) {
+  let winner = null;
+  let bestDistance = Infinity;
+  for (const item of items) {
+    for (const node of item.nodes) {
+      if (!node.draw) {
+        continue;
+      }
+      const d = distance(node.x, node.y, x, y);
+      if (d < bestDistance) {
+        bestDistance = d;
+        winner = node;
+      }
     }
   }
   return winner;
