@@ -21,7 +21,7 @@
   <link rel="icon" href="data:,">
 </head>
 <body class="page-home">
-  <header class="site-header">
+  <header class="site-header" data-puzzle-ceiling>
     <div class="container header-row">
       <div class="header-left">
         <a class="site-title" href="index.html">Harrison J. Esterly, PhD</a>
@@ -51,33 +51,38 @@
     </div>
   </header>
 
-  <main class="content">
-    <div class="container">
+  <main class="content" data-puzzle-stage="static">
+    <a class="visually-hidden" href="#main-external-links">Skip to external links</a>
+    <div class="container" data-puzzle-walls>
       <section class="home-intro" aria-label="Introduction">
-        <p>I’m drawn to hard problems where science, markets, and execution intersect.</p>
+        <p data-puzzle-run>I’m drawn to hard problems where science, markets, and execution intersect.</p>
 
-        <p>I’m a PhD chemist with experience across scientific research, technology commercialization, startups, and early-stage investing. I’m interested in how complex scientific ideas become useful tools, products, companies, and investment opportunities.</p>
+        <p data-puzzle-run>I’m a PhD chemist with experience across scientific research, technology commercialization, startups, and early-stage investing. I’m interested in how complex scientific ideas become useful tools, products, companies, and investment opportunities.</p>
 
-        <p>My research has spanned stem cell differentiation, intrinsically disordered proteins, liquid-liquid phase separation, protein aggregation, and method development at different stages. Across these problems, I’ve used wet-lab experiments, nonlinear spectroscopy, and computational analysis and modeling to make complex biological systems more measurable and interpretable.</p>
+        <p data-puzzle-run>My research has spanned stem cell differentiation, intrinsically disordered proteins, liquid-liquid phase separation, protein aggregation, and method development at different stages. Across these problems, I’ve used wet-lab experiments, nonlinear spectroscopy, and computational analysis and modeling to make complex biological systems more measurable and interpretable.</p>
 
-        <p>This site is my small corner of the internet. There is a puzzle on each page. Solve it, and you get a reward. Good luck.</p>
+        <p data-puzzle-run>This site is my small corner of the internet. There is a <a href="#" data-puzzle-trigger>puzzle</a> on each page. Solve it, and you get a reward. Good luck.</p>
 
-        <p>Connect with me if you’re a constructive optimist. <a href="mailto:HarrisonJEsterly@gmail.com">Email</a> or <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn">LinkedIn</a> is best.</p>
+        <p data-puzzle-run>Connect with me if you’re a constructive optimist. <a href="mailto:HarrisonJEsterly@gmail.com">Email</a> or <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn" data-puzzle-linkedin>LinkedIn</a> is best.</p>
 
-        <nav class="social" aria-label="External links">
-          <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en" aria-label="Google Scholar">Google Scholar</a>
-          <a href="https://github.com/Type2Enthusiasm" aria-label="GitHub">GitHub</a>
-          <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn">LinkedIn</a>
+        <nav class="social" aria-label="External links" id="main-external-links">
+          <a href="https://scholar.google.com/citations?user=GLnG-aUAAAAJ&hl=en" aria-label="Google Scholar" data-puzzle-run>Google Scholar</a>
+          <a href="https://github.com/Type2Enthusiasm" aria-label="GitHub" data-puzzle-run>GitHub</a>
+          <a href="https://www.linkedin.com/in/harrison-esterly/" aria-label="LinkedIn" data-puzzle-run>LinkedIn</a>
         </nav>
       </section>
     </div>
   </main>
 
-  <footer>
+  <footer data-puzzle-floor>
     <div class="container small">
       <div>2026 Harrison J. Esterly · <span class="meta">Minimal by design.</span></div>
     </div>
   </footer>
+
+  <canvas class="puzzle-overlay" data-puzzle-canvas hidden aria-hidden="true"></canvas>
+  <button class="puzzle-reset" type="button" data-puzzle-reset hidden>Reset puzzle</button>
+  <script type="module" src="puzzle.js"></script>
 
 </body>
 </html>
