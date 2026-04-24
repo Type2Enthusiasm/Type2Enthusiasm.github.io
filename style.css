@@ -256,8 +256,9 @@ footer{ border-top:1px solid var(--hairline); padding:1rem 0 3rem; margin-top:2r
 }
 
 .home-bottom{
-  margin-top:auto;
-  padding-top:2rem;
+  margin-top:1.75rem;
+  padding-top:1.1rem;
+  border-top:1px solid var(--hairline);
 }
 
 .home-page footer{
@@ -270,7 +271,8 @@ footer{ border-top:1px solid var(--hairline); padding:1rem 0 3rem; margin-top:2r
   }
 
   .home-bottom{
-    padding-top:1.25rem;
+    margin-top:1.25rem;
+    padding-top:0.9rem;
   }
 }
 
