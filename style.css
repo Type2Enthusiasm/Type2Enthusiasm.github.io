@@ -289,6 +289,18 @@ footer{
   transform-origin:0 0;
   will-change:transform;
   contain:layout style paint;
+  pointer-events:none;
+}
+
+.puzzle-glyph.draggable{
+  pointer-events:auto;
+  cursor:grab;
+  z-index:10;
+  touch-action:none;
+}
+
+.puzzle-glyph.dragging{
+  cursor:grabbing;
 }
 
 .puzzle-reset{
