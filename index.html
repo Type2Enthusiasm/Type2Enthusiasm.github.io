@@ -1,19 +1,5 @@
 <!doctype html>
 <html lang="en">
-
-<script>
-  (function() {
-    try {
-      const KEY = 'theme';
-      const stored = localStorage.getItem(KEY);
-      const sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      const theme = stored || sys;
-      document.documentElement.setAttribute('data-theme', theme);
-      if (!stored) localStorage.setItem(KEY, theme);
-    } catch (_) {}
-  })();
-</script>
-
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -61,23 +47,6 @@
           </a>
         </nav>
 
-        <button class="theme-toggle" id="theme-toggle" aria-pressed="false"
-                aria-label="Toggle color theme" title="Toggle theme">
-          <svg class="sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="12" cy="12" r="4"></circle>
-            <circle cx="12" cy="3" r="1.25"></circle>
-            <circle cx="12" cy="21" r="1.25"></circle>
-            <circle cx="3"  cy="12" r="1.25"></circle>
-            <circle cx="21" cy="12" r="1.25"></circle>
-            <circle cx="5.636"  cy="5.636"  r="1.25"></circle>
-            <circle cx="18.364" cy="5.636"  r="1.25"></circle>
-            <circle cx="5.636"  cy="18.364" r="1.25"></circle>
-            <circle cx="18.364" cy="18.364" r="1.25"></circle>
-          </svg>
-          <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"/>
-          </svg>
-        </button>
       </div>
     </div>
   </header>
@@ -106,33 +75,5 @@
     </div>
   </footer>
 
-  <script>
-  (function(){
-    const KEY = 'theme';
-    const root = document.documentElement;
-    const btn  = document.getElementById('theme-toggle');
-    if (!btn) return;
-
-    function apply(theme){
-      root.setAttribute('data-theme', theme);
-      btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-      try { localStorage.setItem(KEY, theme); } catch(_) {}
-    }
-
-    apply(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
-
-    btn.addEventListener('click', () => {
-      const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-      apply(current === 'dark' ? 'light' : 'dark');
-    });
-
-    try {
-      const m = window.matchMedia('(prefers-color-scheme: dark)');
-      m.addEventListener?.('change', e => {
-        if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light');
-       });
-     } catch (_) {}
-    })();
-  </script>
 </body>
 </html>

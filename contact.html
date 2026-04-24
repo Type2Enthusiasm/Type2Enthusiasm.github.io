@@ -1,23 +1,5 @@
 <!doctype html>
 <html lang="en">
-
-  <!-- FOUC prevention: set theme before CSS loads -->
-<script>
-  (function() {
-    try {
-      const KEY = 'theme';
-      // 1) Read user's last choice
-      const stored = localStorage.getItem(KEY);
-      // 2) If none, fall back to system preference (correct direction)
-      const sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      const theme = stored || sys;
-      document.documentElement.setAttribute('data-theme', theme);
-      // Optional: keep storage aligned on first load with system default
-      if (!stored) localStorage.setItem(KEY, theme);
-    } catch (_) {}
-  })();
-</script>
-
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -69,29 +51,6 @@
             <i data-feather="github"></i>
           </a>
         </nav>
-    
-        <!-- Theme toggle on the RIGHT -->
-        <button class="theme-toggle" id="theme-toggle" aria-pressed="false"
-                aria-label="Toggle color theme" title="Toggle theme">
-          <!-- Sun (uniform dots) -->
-          <svg class="sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <!-- core -->
-            <circle cx="12" cy="12" r="4"></circle>
-            <!-- rays -->
-            <circle cx="12" cy="3" r="1.25"></circle>   <!-- top -->
-            <circle cx="12" cy="21" r="1.25"></circle>  <!-- bottom -->
-            <circle cx="3"  cy="12" r="1.25"></circle>  <!-- left -->
-            <circle cx="21" cy="12" r="1.25"></circle>  <!-- right -->
-            <circle cx="5.636"  cy="5.636"  r="1.25"></circle>  <!-- top-left -->
-            <circle cx="18.364" cy="5.636"  r="1.25"></circle>  <!-- top-right -->
-            <circle cx="5.636"  cy="18.364" r="1.25"></circle>  <!-- bottom-left -->
-            <circle cx="18.364" cy="18.364" r="1.25"></circle>  <!-- bottom-right -->
-          </svg>
-          <!-- Moon (shown in dark mode) -->
-          <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"/>
-          </svg>
-        </button>
       </div>
     </div>
   </header>
@@ -134,41 +93,5 @@
       <div> 2025 Harrison J. Esterly · <span class="meta">Template inspired by Ezhil-style minimalism.</span></div>
     </div>
   </footer>
-</body>
-</html>
-
-
-  <!-- Toggle logic -->
-  <script>
-  (function(){
-    const KEY = 'theme';
-    const root = document.documentElement;
-    const btn  = document.getElementById('theme-toggle');
-    if (!btn) return;
-
-    function apply(theme){
-      root.setAttribute('data-theme', theme);
-      btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-      try { localStorage.setItem(KEY, theme); } catch(_) {}
-    }
-
-    // Initialize from current attribute (already set in <head> script)
-    apply(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
-
-    // Click to toggle
-    btn.addEventListener('click', () => {
-      const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-      apply(current === 'dark' ? 'light' : 'dark');
-    });
-
-    // Optional: react if system theme changes (only when user hasn’t chosen)
-    try {
-      const m = window.matchMedia('(prefers-color-scheme: dark)');
-      m.addEventListener?.('change', e => {
-        if (!localStorage.getItem(KEY)) apply(e.matches ? 'dark' : 'light');
-       });
-     } catch (_) {}
-    })();
-  </script> 
 </body>
 </html>
