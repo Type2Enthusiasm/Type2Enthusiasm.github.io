@@ -8,13 +8,14 @@
 
 /* ===== Base light tokens ===== */
 :root{
-  --bg:#f2f2ef;
-  --text:#1f1f1f;
-  --muted:#60605c;
-  --hairline:#d8d8d4;
-  --link:#262625;
-  --accent:#141414;
-  --code-bg:#f2f2ef;
+  --bg:#f5ede5;
+  --text:#272838;
+  --muted:#5C544E;
+  --hairline:#e4d4c7;
+  --link:#B83318;
+  --accent:#B83318;
+  --accent-hover:#942813;
+  --code-bg:#efe3d8;
 
   /* Fonts: Ezhil-like stack */
   --font-body: "Ubuntu", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
@@ -38,7 +39,7 @@ body{
   margin:0;
   font:16px/1.65 var(--font-body);
   color:var(--text);
-  background:var(--bg);
+  background: linear-gradient(180deg, #f8f2eb 0%, var(--bg) 100%);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -84,7 +85,9 @@ body{
 .site-nav a{
   font-size:.95rem; color:var(--muted); text-decoration:none; border-bottom:1px dotted transparent; padding-bottom:2px;
 }
-.site-nav a:hover{ color:var(--link); border-color:var(--link); }
+.site-nav a:hover{ color:var(--accent-hover); border-color:var(--accent-hover); }
+.site-nav a.active,
+.site-nav a[aria-current="page"]{ color:var(--text); border-bottom:2px solid var(--accent); padding-bottom:3px; }
 
 /* top row: title/subtitle */
 .header-top{
@@ -126,12 +129,13 @@ body{
   border-radius:9999px;
   color:var(--muted);              /* Feather SVGs use currentColor */
   text-decoration:none;
+  background: rgba(255, 250, 246, 0.82);
 }
 
 
 .site-social a:hover{
-  color:var(--link);
-  border-color:var(--link);
+  color:var(--accent-hover);
+  border-color:var(--accent-hover);
 }
 
 /* Feather SVG size (after feather.replace) */
@@ -164,7 +168,7 @@ h3{ font-size:1.6rem }
 p{ margin:0 0 1rem }
 
 a{ color:var(--link); text-decoration-thickness:.06em; text-underline-offset:2px }
-a:hover{ text-decoration-style:dotted }
+a:hover{ color:var(--accent-hover); text-decoration-style:dotted }
 
 /* Keyboard focus */
 a:focus-visible, button:focus-visible, [tabindex]:focus-visible{
@@ -208,7 +212,7 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
 /* Social */
 .social{ display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.5rem }
 .social a{ display:inline-flex; align-items:center; gap:.4rem; color:var(--muted); text-decoration:none; border-bottom:1px dotted transparent }
-.social a:hover{ color:var(--link); border-color:var(--link) }
+.social a:hover{ color:var(--accent-hover); border-color:var(--accent-hover) }
 .social svg{ width:18px; height:18px; display:block }
 
 /* Tables */
@@ -270,3 +274,8 @@ footer{ border-top:1px solid var(--hairline); padding:1rem 0 3rem; margin-top:2r
   }
 }
 
+
+::selection {
+  background: rgba(184, 51, 24, 0.16);
+  color: var(--text);
+}

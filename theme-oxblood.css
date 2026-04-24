@@ -1,24 +1,23 @@
 @import url("style.css");
 
 :root {
-  --bg: #f5ede5;
-  --text: #241f1c;
-  --muted: #8a3430;
-  --hairline: #e4d4c7;
-  --link: #8a3430;
-  --accent: #6c201d;
-  --code-bg:#f5ede5;
+ --bg: #f5ede5;
+ --text: #272838;
+ --muted: #5C544E;
+ --hairline: #e4d4c7;
+ --link: #B83318;
+ --accent: #B83318;
+ --accent-hover: #942813;
+ --code-bg: #efe3d8;
 }
 
 body {
-  background:
-    radial-gradient(circle at top, rgba(138, 52, 48, 0.08), transparent 28%),
-    linear-gradient(180deg, #f8f2eb 0%, var(--bg) 100%);
+ background: linear-gradient(180deg, #f8f2eb 0%, var(--bg) 100%);
 }
 
 .site-header,
 footer {
-  border-color: var(--hairline);
+ border-color: var(--hairline);
 }
 
 .site-nav a,
@@ -26,21 +25,29 @@ footer {
 .site-social a,
 .small,
 .meta {
-  color: var(--muted);
+ color: var(--muted);
+}
+
+.site-nav a.active,
+.site-nav a[aria-current="page"] {
+ color: var(--text);
+ border-bottom: 2px solid var(--accent);
+ padding-bottom: 3px;
 }
 
 .site-social a {
-  background: rgba(255, 250, 246, 0.82);
+ background: rgba(255, 250, 246, 0.82);
 }
 
 .site-social a:hover,
 .site-nav a:hover,
 .social a:hover,
 a:hover {
-  color: var(--link);
-  border-color: var(--link);
+ color: var(--link);
+ border-color: var(--link);
 }
 
 ::selection {
-  background: rgba(138, 52, 48, 0.16);
+ background: rgba(184, 51, 24, 0.16);
+ color: var(--text);
 }
