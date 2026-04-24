@@ -1,0 +1,46 @@
+@import url("style.css");
+
+:root {
+  --bg: #f5ede5;
+  --text: #241f1c;
+  --muted: #8a3430;
+  --hairline: #e4d4c7;
+  --link: #8a3430;
+  --accent: #6c201d;
+  --code-bg: #efe3d8;
+}
+
+body {
+  background:
+    radial-gradient(circle at top, rgba(138, 52, 48, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8f2eb 0%, var(--bg) 100%);
+}
+
+.site-header,
+footer {
+  border-color: var(--hairline);
+}
+
+.site-nav a,
+.social a,
+.site-social a,
+.small,
+.meta {
+  color: var(--muted);
+}
+
+.site-social a {
+  background: rgba(255, 250, 246, 0.82);
+}
+
+.site-social a:hover,
+.site-nav a:hover,
+.social a:hover,
+a:hover {
+  color: var(--link);
+  border-color: var(--link);
+}
+
+::selection {
+  background: rgba(138, 52, 48, 0.16);
+}
