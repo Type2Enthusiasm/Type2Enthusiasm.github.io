@@ -14,7 +14,7 @@
   --hairline:#d8d8d4;
   --link:#262625;
   --accent:#141414;
-  --code-bg:#ecece8;
+  --code-bg:#f2f2ef;
 
   /* Fonts: Ezhil-like stack */
   --font-body: "Ubuntu", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
@@ -233,4 +233,40 @@ footer{ border-top:1px solid var(--hairline); padding:1rem 0 3rem; margin-top:2r
   text-decoration: none;
 }
 .social .btn:focus { outline: 2px solid #000; outline-offset: 2px; }
+
+.home-page{
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+}
+
+.home-page .content{
+  flex:1;
+  display:flex;
+}
+
+.home-intro{
+  display:flex;
+  flex-direction:column;
+  flex:1;
+}
+
+.home-bottom{
+  margin-top:auto;
+  padding-top:2rem;
+}
+
+.home-page footer{
+  margin-top:0;
+}
+
+@media (max-width:640px){
+  .home-page .content{
+    display:block;
+  }
+
+  .home-bottom{
+    padding-top:1.25rem;
+  }
+}
 
