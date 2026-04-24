@@ -265,6 +265,32 @@ footer{
   display:none !important;
 }
 
+.puzzle-glyph-layer{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:31;
+}
+
+.puzzle-glyph-layer.is-active{
+  display:block;
+}
+
+.puzzle-glyph-layer[hidden]{
+  display:none !important;
+}
+
+.puzzle-glyph{
+  position:absolute;
+  left:0;
+  top:0;
+  display:block;
+  white-space:pre;
+  transform-origin:0 0;
+  will-change:transform;
+  contain:layout style paint;
+}
+
 .puzzle-reset{
   position:fixed;
   right:1rem;
@@ -277,7 +303,7 @@ footer{
   border-radius:var(--radius);
   background:rgba(255, 250, 246, 0.92);
   text-decoration:none;
-  z-index:31;
+  z-index:32;
   cursor:pointer;
 }
 

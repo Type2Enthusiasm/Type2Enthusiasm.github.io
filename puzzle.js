@@ -3,7 +3,7 @@ const PHYSICS = {
   damping: 0.992,
   hangingIterations: 4,
   unwoundIterations: 6,
-  restitution: 0.4,
+  restitution: 0.35,
   floorFriction: 0.85,
   grabRadius: 24,
   dragThreshold: 20,
@@ -12,20 +12,45 @@ const PHYSICS = {
   substepClamp: 1 / 30
 };
 
-/**
- * Initialize the landing-page puzzle if all required elements are present.
- */
+const TEXT_STYLE_KEYS = [
+  "font",
+  "color",
+  "fontKerning",
+  "fontFeatureSettings",
+  "fontVariationSettings",
+  "fontVariantLigatures",
+  "fontVariantCaps",
+  "fontStretch",
+  "fontStyle",
+  "fontWeight",
+  "fontSize",
+  "lineHeight",
+  "letterSpacing",
+  "wordSpacing",
+  "textTransform",
+  "textRendering",
+  "textDecorationLine",
+  "textDecorationColor",
+  "textDecorationStyle",
+  "textDecorationThickness",
+  "textUnderlineOffset",
+  "textDecorationSkipInk",
+  "textShadow",
+  "opacity"
+];
+
 function initPuzzle() {
   const main = document.querySelector("main[data-puzzle-stage]");
   const trigger = document.querySelector("[data-puzzle-trigger]");
   const proseLinkedIn = document.querySelector("[data-puzzle-linkedin]");
   const canvas = document.querySelector("[data-puzzle-canvas]");
+  const glyphLayer = document.querySelector("[data-puzzle-glyph-layer]");
   const resetButton = document.querySelector("[data-puzzle-reset]");
   const ceiling = document.querySelector("[data-puzzle-ceiling]");
   const floor = document.querySelector("[data-puzzle-floor]");
   const walls = document.querySelector("[data-puzzle-walls]");
 
-  if (!main || !trigger || !proseLinkedIn || !canvas || !resetButton || !ceiling || !floor || !walls) {
+  if (!main || !trigger || !proseLinkedIn || !canvas || !glyphLayer || !resetButton || !ceiling || !floor || !walls) {
     return;
   }
 
@@ -40,6 +65,7 @@ function initPuzzle() {
     proseLinkedIn,
     canvas,
     ctx,
+    glyphLayer,
     resetButton,
     boundsSources: { ceiling, floor, walls },
     stage: "static",
@@ -81,26 +107,31 @@ function bindEvents(state) {
 }
 
 function startHanging(state) {
+  clearGlyphLayer(state);
+
   const linkedInGlyphs = collectElementGlyphs(state.proseLinkedIn).filter((glyph) => glyph.draw);
   if (linkedInGlyphs.length < 8) {
     return;
   }
 
-  setCanvasActive(state, true);
+  setSceneActive(state, true);
   setHidden(state, state.proseLinkedIn, true);
 
-  state.hangingScene = buildHangingScene(linkedInGlyphs);
+  state.hangingScene = buildHangingScene(linkedInGlyphs, state.glyphLayer);
   state.runScene = null;
   state.stage = "hanging";
   state.main.dataset.puzzleStage = "hanging";
   state.resetButton.hidden = false;
+  syncGlyphs(state);
   startLoop(state);
 }
 
 function startUnwound(state, transition = null) {
+  clearGlyphLayer(state);
+
   const runs = [...state.main.querySelectorAll("[data-puzzle-run]")];
   const items = runs
-    .map((element) => buildRunItem(element))
+    .map((element) => buildRunItem(element, state.glyphLayer))
     .filter(Boolean);
 
   if (!items.length) {
@@ -115,6 +146,7 @@ function startUnwound(state, transition = null) {
   state.runScene = { items };
   state.stage = "unwound";
   state.main.dataset.puzzleStage = "unwound";
+  setSceneActive(state, true);
 
   if (transition) {
     const target = findTransitionNode(items, transition.text, transition.clientX, transition.clientY);
@@ -129,6 +161,8 @@ function startUnwound(state, transition = null) {
       state.grabOffsetY = target.y - transition.clientY;
     }
   }
+
+  syncGlyphs(state);
 }
 
 function resetPuzzle(state) {
@@ -140,18 +174,23 @@ function resetPuzzle(state) {
   state.grabTarget = null;
   state.pointerId = null;
   state.lastTime = 0;
+
   for (const element of state.hiddenElements) {
     element.removeAttribute("data-puzzle-hidden");
   }
   state.hiddenElements.clear();
-  setCanvasActive(state, false);
+
+  clearGlyphLayer(state);
+  setSceneActive(state, false);
   state.resetButton.hidden = true;
   stopLoop(state);
 }
 
-function setCanvasActive(state, active) {
+function setSceneActive(state, active) {
   state.canvas.hidden = !active;
   state.canvas.classList.toggle("is-active", active);
+  state.glyphLayer.hidden = !active;
+  state.glyphLayer.classList.toggle("is-active", active);
   if (active) {
     resizeCanvas(state);
   }
@@ -177,7 +216,7 @@ function refreshSceneLayout(state) {
     return;
   }
   if (state.stage === "unwound") {
-    resetPuzzle(state);
+    startUnwound(state);
   }
 }
 
@@ -218,6 +257,7 @@ function tick(state, time) {
 
   updateScene(state, dt);
   drawScene(state);
+  syncGlyphs(state);
   state.rafId = requestAnimationFrame((nextTime) => tick(state, nextTime));
 }
 
@@ -247,18 +287,35 @@ function drawScene(state) {
   }
 }
 
-function buildHangingScene(linkedInGlyphs) {
-  const fixedGlyphs = linkedInGlyphs.slice(0, 4).map((glyph) => ({ ...glyph }));
-  const detachedGlyphs = linkedInGlyphs.slice(4);
-  const nodes = detachedGlyphs.map((glyph) => createNode({
-    x: glyph.x,
-    y: glyph.y,
-    width: glyph.width,
-    char: glyph.char,
-    font: glyph.font,
-    color: glyph.color,
-    glyphOffsetY: glyph.glyphOffsetY
-  }));
+function syncGlyphs(state) {
+  if (state.stage === "hanging" && state.hangingScene) {
+    syncNodes(state.hangingScene.fixedGlyphs);
+    syncNodes(state.hangingScene.letters);
+  }
+  if (state.stage === "unwound" && state.runScene) {
+    for (const item of state.runScene.items) {
+      syncNodes(item.nodes);
+    }
+  }
+}
+
+function syncNodes(nodes) {
+  for (const node of nodes) {
+    if (!node.el) {
+      continue;
+    }
+    node.el.style.transform = `translate(${node.x - node.width / 2}px, ${node.y - node.height / 2}px)`;
+    node.el.style.visibility = node.draw ? "visible" : "hidden";
+  }
+}
+
+function clearGlyphLayer(state) {
+  state.glyphLayer.textContent = "";
+}
+
+function buildHangingScene(linkedInGlyphs, glyphLayer) {
+  const fixedGlyphs = linkedInGlyphs.slice(0, 4).map((glyph) => createNode(glyph, glyphLayer));
+  const detachedGlyphs = linkedInGlyphs.slice(4).map((glyph) => createNode(glyph, glyphLayer));
 
   const anchorSource = fixedGlyphs[fixedGlyphs.length - 1];
   const anchor = {
@@ -267,41 +324,31 @@ function buildHangingScene(linkedInGlyphs) {
     pinned: true
   };
 
-  for (let index = 0; index < nodes.length; index += 1) {
-    const previous = index === 0 ? anchor : nodes[index - 1];
-    nodes[index].restLength = distance(previous.x, previous.y, nodes[index].x, nodes[index].y);
+  for (let index = 0; index < detachedGlyphs.length; index += 1) {
+    const previous = index === 0 ? anchor : detachedGlyphs[index - 1];
+    detachedGlyphs[index].restLength = distance(previous.x, previous.y, detachedGlyphs[index].x, detachedGlyphs[index].y);
   }
 
   return {
     anchor,
     fixedGlyphs,
-    letters: nodes
+    letters: detachedGlyphs
   };
 }
 
-function buildRunItem(element) {
+function buildRunItem(element, glyphLayer) {
   const glyphs = collectElementGlyphs(element);
   if (!glyphs.length) {
     return null;
   }
 
-  const nodes = glyphs.map((glyph, index) => {
-    const node = createNode({
-      x: glyph.x,
-      y: glyph.y,
-      width: glyph.width,
-      char: glyph.char,
-      font: glyph.font,
-      color: glyph.color,
-      glyphOffsetY: glyph.glyphOffsetY,
-      homeX: glyph.x,
-      homeY: glyph.y,
-      homeLocked: true,
-      draw: glyph.draw,
-      index
-    });
-    return node;
-  });
+  const nodes = glyphs.map((glyph, index) => createNode({
+    ...glyph,
+    homeX: glyph.x,
+    homeY: glyph.y,
+    homeLocked: true,
+    index
+  }, glyphLayer));
 
   for (let index = 0; index < nodes.length; index += 1) {
     const previous = nodes[index - 1];
@@ -331,9 +378,6 @@ function collectElementGlyphs(element) {
     }
 
     const style = getComputedStyle(parent);
-    const font = style.font;
-    const color = style.color;
-    const fontSize = parseFloat(style.fontSize) || 16;
     const graphemes = segmentText(textNode.textContent || "");
     let offset = 0;
 
@@ -342,21 +386,20 @@ function collectElementGlyphs(element) {
       const end = start + grapheme.length;
       offset = end;
 
-      const rect = getTextRect(textNode, start, end);
-      if (!rect) {
+      const metrics = getTextRect(textNode, start, end);
+      if (!metrics) {
         continue;
       }
 
-      const width = Math.max(rect.width, fontSize * 0.18);
       glyphs.push({
         char: grapheme,
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height * 0.78 - fontSize * 0.7,
-        width,
-        font,
-        color,
-        glyphOffsetY: fontSize * 0.22,
-        draw: /\S/.test(grapheme)
+        text: normalizeGlyphText(grapheme),
+        x: metrics.left + metrics.width / 2,
+        y: metrics.top + metrics.height / 2,
+        width: Math.max(metrics.width, 1),
+        height: Math.max(metrics.height, 1),
+        draw: /\S/.test(grapheme),
+        style: pickTextStyles(style)
       });
     }
   }
@@ -397,44 +440,79 @@ function getTextRect(textNode, start, end) {
   range.setEnd(textNode, end);
 
   const rects = [...range.getClientRects()].filter((rect) => rect.width || rect.height);
+  const lineRect = range.getBoundingClientRect();
   range.detach?.();
-  if (!rects.length) {
+  if (!rects.length || !lineRect.height) {
     return null;
   }
 
-  const first = rects[0];
-  const last = rects[rects.length - 1];
+  const rect = rects[0];
   return {
-    left: first.left,
-    top: Math.min(...rects.map((rect) => rect.top)),
-    width: Math.max(last.right - first.left, first.width),
-    height: Math.max(...rects.map((rect) => rect.height))
+    left: rect.left,
+    top: rect.top,
+    width: rect.width || rect.height * 0.28,
+    height: rect.height
   };
 }
 
-function createNode(options) {
-  const x = options.homeX ?? options.x;
-  const y = options.homeY ?? options.y;
+function normalizeGlyphText(grapheme) {
+  if (grapheme === " ") {
+    return "\u00A0";
+  }
+  if (grapheme === "\t") {
+    return "\u00A0\u00A0\u00A0\u00A0";
+  }
+  return grapheme;
+}
+
+function pickTextStyles(style) {
+  const picked = {};
+  for (const key of TEXT_STYLE_KEYS) {
+    picked[key] = style[key];
+  }
+  return picked;
+}
+
+function createNode(options, glyphLayer) {
+  const el = document.createElement("span");
+  el.className = "puzzle-glyph";
+  el.textContent = options.text ?? options.char;
+  el.style.width = `${options.width}px`;
+  el.style.height = `${options.height}px`;
+  applyTextStyles(el, options.style);
+  glyphLayer.append(el);
+
   return {
     x: options.x,
     y: options.y,
     prevX: options.x,
     prevY: options.y,
     width: options.width,
+    height: options.height,
     char: options.char,
-    font: options.font,
-    color: options.color,
-    glyphOffsetY: options.glyphOffsetY ?? 0,
-    restLength: options.restLength ?? options.width,
-    pinned: options.pinned ?? false,
-    homeX: x,
-    homeY: y,
-    homeLocked: options.homeLocked ?? false,
     draw: options.draw ?? true,
+    pinned: options.pinned ?? false,
+    restLength: options.restLength ?? options.width,
+    homeX: options.homeX ?? options.x,
+    homeY: options.homeY ?? options.y,
+    homeLocked: options.homeLocked ?? false,
     prev: null,
     next: null,
-    index: options.index ?? 0
+    index: options.index ?? 0,
+    el
   };
+}
+
+function applyTextStyles(element, styles) {
+  if (!styles) {
+    return;
+  }
+  for (const [key, value] of Object.entries(styles)) {
+    if (!value) {
+      continue;
+    }
+    element.style[key] = value;
+  }
 }
 
 function stepChains(nodes, dt, bounds, iterations, hangingOnly, anchor = null) {
@@ -457,9 +535,7 @@ function stepChains(nodes, dt, bounds, iterations, hangingOnly, anchor = null) {
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     for (let index = 0; index < nodes.length; index += 1) {
       const current = nodes[index];
-      const previous = index === 0 && hangingOnly
-        ? anchor
-        : nodes[index - 1];
+      const previous = index === 0 && hangingOnly ? anchor : nodes[index - 1];
 
       if (!previous) {
         continue;
@@ -622,8 +698,11 @@ function constrainNode(node, ceiling, floor, walls, hangingOnly) {
 }
 
 function drawHangingScene(ctx, scene) {
+  if (!scene.fixedGlyphs.length) {
+    return;
+  }
   ctx.save();
-  ctx.strokeStyle = scene.fixedGlyphs[0]?.color ?? "currentColor";
+  ctx.strokeStyle = getComputedStyle(scene.fixedGlyphs[0].el).color || "currentColor";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   let previousX = scene.anchor.x;
@@ -635,39 +714,37 @@ function drawHangingScene(ctx, scene) {
     previousY = node.y;
   }
   ctx.stroke();
-
-  for (const glyph of scene.fixedGlyphs) {
-    ctx.save();
-    ctx.font = glyph.font;
-    ctx.fillStyle = glyph.color;
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(glyph.char, glyph.x - glyph.width / 2, glyph.y + glyph.glyphOffsetY);
-    ctx.restore();
-  }
-
-  for (const node of scene.letters) {
-    ctx.save();
-    ctx.font = node.font;
-    ctx.fillStyle = node.color;
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(node.char, node.x - node.width / 2, node.y + node.glyphOffsetY);
-    ctx.restore();
-  }
   ctx.restore();
 }
 
 function drawRunItem(ctx, item) {
+  const visibleNodes = item.nodes.filter((node) => node.draw);
+  if (visibleNodes.length < 2) {
+    return;
+  }
+
+  ctx.save();
+  ctx.strokeStyle = getComputedStyle(visibleNodes[0].el).color || "currentColor";
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+
+  let penDown = false;
   for (const node of item.nodes) {
     if (!node.draw) {
+      penDown = false;
       continue;
     }
-    ctx.save();
-    ctx.font = node.font;
-    ctx.fillStyle = node.color;
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(node.char, node.x - node.width / 2, node.y + node.glyphOffsetY);
-    ctx.restore();
+
+    if (!penDown) {
+      ctx.moveTo(node.x, node.y);
+      penDown = true;
+      continue;
+    }
+    ctx.lineTo(node.x, node.y);
   }
+
+  ctx.stroke();
+  ctx.restore();
 }
 
 function getBounds(state) {
@@ -734,6 +811,7 @@ function handlePointerMove(state, event) {
 
   state.grabTarget.x = nextX;
   state.grabTarget.y = nextY;
+  syncGlyphs(state);
 }
 
 function releasePointer(state) {
