@@ -1,11 +1,16 @@
+import { prepareWithSegments } from "./pretext.js";
+
 const PHYSICS = {
-  gravity: 1400,
-  damping: 0.992,
-  constraintIterations: 7,
-  grabRadius: 28,
-  releaseThreshold: 1.12,
-  propagationBoost: 0.03,
-  maxStep: 1 / 30
+  damping: 0.97,
+  gravity: 1800,
+  iterations: 12,
+  constraintStretch: 1.18,
+  unlockThreshold: 1,
+  grabRadius: 26,
+  collisionRadius: 7,
+  bounce: 0.35,
+  fixedStep: 1 / 120,
+  maxFrame: 1 / 20
 };
 
 const TEXT_STYLE_KEYS = [
@@ -66,20 +71,28 @@ function boot() {
     boundsSources: { ceiling, floor, walls },
     stage: "static",
     scene: null,
+    prepared: false,
     running: false,
     rafId: 0,
     lastTime: 0,
+    accumulator: 0,
     pointerId: null,
     pointerX: 0,
     pointerY: 0,
     grabbedNode: null,
     grabOffsetX: 0,
     grabOffsetY: 0,
-    sourceOpacity: target.style.opacity || ""
+    sourceOpacity: target.style.opacity || "",
+    measureCtx: document.createElement("canvas").getContext("2d")
   };
+
+  if (!state.measureCtx) {
+    return;
+  }
 
   resizeCanvas(state);
   bindEvents(state);
+  prepareWhenReady(state);
 }
 
 function bindEvents(state) {
@@ -96,17 +109,22 @@ function bindEvents(state) {
       return;
     }
     event.preventDefault();
-    await activateTarget(state);
+    await activatePuzzle(state);
   });
 
   state.resetButton.addEventListener("click", () => resetPuzzle(state));
-  window.addEventListener("resize", () => refreshActiveScene(state));
-  window.addEventListener("scroll", () => refreshActiveScene(state), { passive: true });
+  window.addEventListener("resize", () => refreshPreparedScene(state));
+  window.addEventListener("scroll", () => refreshPreparedScene(state), { passive: true });
 
   state.canvas.addEventListener("pointerdown", (event) => handlePointerDown(state, event));
   state.canvas.addEventListener("pointermove", (event) => handlePointerMove(state, event));
   state.canvas.addEventListener("pointerup", (event) => handlePointerUp(state, event));
   state.canvas.addEventListener("pointercancel", (event) => handlePointerUp(state, event));
+}
+
+async function prepareWhenReady(state) {
+  await waitForFonts();
+  prepareScene(state);
 }
 
 function armPuzzle(state) {
@@ -115,53 +133,93 @@ function armPuzzle(state) {
   state.resetButton.hidden = false;
 }
 
-async function activateTarget(state) {
+async function activatePuzzle(state) {
   await waitForFonts();
-  buildSceneFromTarget(state);
+  if (!state.prepared) {
+    prepareScene(state);
+  }
   if (!state.scene) {
     return;
   }
 
   state.stage = "active";
   state.main.dataset.puzzleStage = "active";
-  state.target.style.opacity = "0";
-  setSceneVisible(state, true);
+  unlockTail(state.scene);
   syncScene(state.scene, true);
-  drawScene(state);
+  setCanvasActive(state, true);
   startLoop(state);
 }
 
-function buildSceneFromTarget(state, previousScene = null) {
+function resetPuzzle(state) {
+  stopLoop(state);
+  releasePointer(state);
+  state.stage = "static";
+  state.main.dataset.puzzleStage = "static";
+  state.resetButton.hidden = true;
+  setCanvasActive(state, false);
+
+  if (!state.scene) {
+    return;
+  }
+
+  for (const node of state.scene.nodes) {
+    node.locked = true;
+    node.x = node.homeX;
+    node.y = node.homeY;
+    node.px = node.homeX;
+    node.py = node.homeY;
+  }
+  syncScene(state.scene, true);
+}
+
+function prepareScene(state, previousScene = null) {
   clearScene(state);
   resizeCanvas(state);
 
-  const glyphs = collectElementGlyphs(state.target).filter((glyph) => glyph.draw);
+  const glyphs = collectPreparedGlyphs(state.target, state.measureCtx);
   if (glyphs.length < 2) {
+    state.target.style.opacity = state.sourceOpacity;
+    state.prepared = false;
     return;
   }
 
   state.scene = buildScene(glyphs, state.glyphLayer);
+  state.prepared = true;
+  state.glyphLayer.hidden = false;
+  state.target.style.opacity = "0";
+
   if (previousScene) {
-    for (let index = 0; index < state.scene.nodes.length; index += 1) {
-      const next = state.scene.nodes[index];
-      const prev = previousScene.nodes[index];
-      if (!next || !prev) {
-        continue;
-      }
-      next.isReleased = prev.isReleased;
-      if (prev.isReleased) {
-        next.x = prev.x;
-        next.y = prev.y;
-        next.prevX = prev.prevX;
-        next.prevY = prev.prevY;
-      }
-    }
+    carrySceneState(state.scene, previousScene);
+  }
+
+  syncScene(state.scene, true);
+}
+
+function refreshPreparedScene(state) {
+  resizeCanvas(state);
+  if (!state.prepared && state.stage === "static") {
+    return;
+  }
+
+  const previousScene = state.scene;
+  prepareScene(state, previousScene);
+  if (!state.scene) {
+    return;
+  }
+
+  if (state.stage === "active") {
+    setCanvasActive(state, true);
   }
 }
 
+function clearScene(state) {
+  state.scene = null;
+  state.glyphLayer.textContent = "";
+}
+
 function buildScene(glyphs, glyphLayer) {
-  const fixedCount = Math.max(1, Math.min(4, glyphs.length - 1));
   const nodes = glyphs.map((glyph, index) => createNode(glyph, index, glyphLayer));
+  const fixedCount = Math.max(2, nodes.length - Math.min(5, Math.max(2, nodes.length - 1)));
 
   for (let index = 0; index < nodes.length; index += 1) {
     const node = nodes[index];
@@ -169,15 +227,32 @@ function buildScene(glyphs, glyphLayer) {
     node.prev = previous;
     if (previous) {
       previous.next = node;
-      node.restLength = distance(previous.homeX, previous.homeY, node.homeX, node.homeY);
+      node.restLength = distance(previous.homeX, previous.homeY, node.homeX, node.homeY) * PHYSICS.constraintStretch;
     }
-    if (index < fixedCount) {
-      node.pinned = true;
-      node.isReleased = true;
-    }
+    node.locked = true;
   }
 
-  return { nodes };
+  return { nodes, fixedCount };
+}
+
+function carrySceneState(nextScene, previousScene) {
+  for (let index = 0; index < nextScene.nodes.length; index += 1) {
+    const next = nextScene.nodes[index];
+    const prev = previousScene?.nodes[index];
+    if (!next || !prev) {
+      continue;
+    }
+
+    const deltaHomeX = next.homeX - prev.homeX;
+    const deltaHomeY = next.homeY - prev.homeY;
+    next.locked = prev.locked;
+    if (!prev.locked) {
+      next.x = prev.x + deltaHomeX;
+      next.y = prev.y + deltaHomeY;
+      next.px = prev.px + deltaHomeX;
+      next.py = prev.py + deltaHomeY;
+    }
+  }
 }
 
 function createNode(glyph, index, glyphLayer) {
@@ -195,12 +270,11 @@ function createNode(glyph, index, glyphLayer) {
     height: glyph.height,
     x: glyph.x,
     y: glyph.y,
-    prevX: glyph.x,
-    prevY: glyph.y,
+    px: glyph.x,
+    py: glyph.y,
     homeX: glyph.x,
     homeY: glyph.y,
-    pinned: false,
-    isReleased: false,
+    locked: true,
     restLength: glyph.width,
     prev: null,
     next: null,
@@ -208,49 +282,21 @@ function createNode(glyph, index, glyphLayer) {
   };
 }
 
-function refreshActiveScene(state) {
-  resizeCanvas(state);
-  if (state.stage !== "active" || !state.scene) {
-    return;
+function unlockTail(scene) {
+  for (let index = scene.fixedCount; index < scene.nodes.length; index += 1) {
+    const node = scene.nodes[index];
+    const sag = (index - scene.fixedCount + 1) * 1.75;
+    node.locked = false;
+    node.x = node.homeX;
+    node.y = node.homeY + sag;
+    node.px = node.homeX;
+    node.py = node.y - Math.max(1, sag * 0.75);
   }
-
-  const previousScene = state.scene;
-  const grabbedIndex = state.grabbedNode?.index ?? null;
-  buildSceneFromTarget(state, previousScene);
-  if (!state.scene) {
-    return;
-  }
-
-  if (grabbedIndex !== null) {
-    state.grabbedNode = state.scene.nodes[grabbedIndex] || null;
-  }
-  setSceneVisible(state, true);
-  syncScene(state.scene, true);
-  drawScene(state);
 }
 
-function resetPuzzle(state) {
-  stopLoop(state);
-  releasePointer(state);
-  clearScene(state);
-  state.target.style.opacity = state.sourceOpacity;
-  state.stage = "static";
-  state.main.dataset.puzzleStage = "static";
-  state.resetButton.hidden = true;
-  setSceneVisible(state, false);
-  drawScene(state);
-}
-
-function clearScene(state) {
-  state.scene = null;
-  state.glyphLayer.textContent = "";
-}
-
-function setSceneVisible(state, active) {
+function setCanvasActive(state, active) {
   state.canvas.hidden = !active;
-  state.glyphLayer.hidden = !active;
   state.canvas.classList.toggle("is-active", active);
-  state.glyphLayer.classList.toggle("is-active", active);
 }
 
 function resizeCanvas(state) {
@@ -270,6 +316,7 @@ function startLoop(state) {
   }
   state.running = true;
   state.lastTime = 0;
+  state.accumulator = 0;
   state.rafId = requestAnimationFrame((time) => tick(state, time));
 }
 
@@ -286,130 +333,95 @@ function tick(state, time) {
     return;
   }
 
-  const dt = state.lastTime ? Math.min((time - state.lastTime) / 1000, PHYSICS.maxStep) : 1 / 60;
-  state.lastTime = time;
+  if (!state.lastTime) {
+    state.lastTime = time;
+  }
 
-  stepScene(state.scene, dt, getBounds(state), state.grabbedNode, state.pointerX, state.pointerY, state.grabOffsetX, state.grabOffsetY);
+  const frameDt = Math.min((time - state.lastTime) / 1000, PHYSICS.maxFrame);
+  state.lastTime = time;
+  state.accumulator += frameDt;
+
+  while (state.accumulator >= PHYSICS.fixedStep) {
+    simulate(state.scene, PHYSICS.fixedStep, getBounds(state), state.grabbedNode, state.pointerX, state.pointerY, state.grabOffsetX, state.grabOffsetY);
+    state.accumulator -= PHYSICS.fixedStep;
+  }
+
   syncScene(state.scene, true);
-  drawScene(state);
+  clearCanvas(state.ctx);
   state.rafId = requestAnimationFrame((nextTime) => tick(state, nextTime));
 }
 
-function stepScene(scene, dt, bounds, grabbedNode, pointerX, pointerY, grabOffsetX, grabOffsetY) {
+function simulate(scene, dt, bounds, grabbedNode, pointerX, pointerY, grabOffsetX, grabOffsetY) {
   for (const node of scene.nodes) {
-    if (node.pinned) {
+    if (node.locked && node !== grabbedNode) {
       node.x = node.homeX;
       node.y = node.homeY;
-      node.prevX = node.homeX;
-      node.prevY = node.homeY;
+      node.px = node.homeX;
+      node.py = node.homeY;
       continue;
     }
 
-    if (!node.isReleased) {
-      node.x = node.homeX;
-      node.y = node.homeY;
-      node.prevX = node.homeX;
-      node.prevY = node.homeY;
+    if (node === grabbedNode) {
+      node.x = pointerX + grabOffsetX;
+      node.y = pointerY + grabOffsetY;
+      node.px = node.x;
+      node.py = node.y;
       continue;
     }
 
-    const velocityX = (node.x - node.prevX) * PHYSICS.damping;
-    const velocityY = (node.y - node.prevY) * PHYSICS.damping;
-    node.prevX = node.x;
-    node.prevY = node.y;
-    node.x += velocityX;
-    node.y += velocityY + PHYSICS.gravity * dt * dt;
+    const vx = (node.x - node.px) * PHYSICS.damping;
+    const vy = (node.y - node.py) * PHYSICS.damping;
+    node.px = node.x;
+    node.py = node.y;
+    node.x += vx;
+    node.y += vy + PHYSICS.gravity * dt * dt;
   }
 
-  if (grabbedNode) {
-    grabbedNode.x = pointerX + grabOffsetX;
-    grabbedNode.y = pointerY + grabOffsetY;
-  }
-
-  for (let iteration = 0; iteration < PHYSICS.constraintIterations; iteration += 1) {
-    for (let index = 1; index < scene.nodes.length; index += 1) {
-      solveDistance(scene.nodes[index - 1], scene.nodes[index], scene.nodes[index].restLength);
+  for (let iteration = 0; iteration < PHYSICS.iterations; iteration += 1) {
+    for (let index = 0; index < scene.nodes.length - 1; index += 1) {
+      solveDistance(scene.nodes[index], scene.nodes[index + 1], scene.nodes[index + 1].restLength, grabbedNode);
     }
+
+    solveCollisions(scene.nodes, grabbedNode);
 
     for (const node of scene.nodes) {
-      if (node.pinned) {
+      if (node === grabbedNode) {
+        node.x = pointerX + grabOffsetX;
+        node.y = pointerY + grabOffsetY;
+        continue;
+      }
+      if (node.locked) {
+        node.x = node.homeX;
+        node.y = node.homeY;
         continue;
       }
       constrainNode(node, bounds);
-      if (!node.isReleased) {
-        node.x = node.homeX;
-        node.y = node.homeY;
-      }
-    }
-
-    if (grabbedNode) {
-      grabbedNode.x = pointerX + grabOffsetX;
-      grabbedNode.y = pointerY + grabOffsetY;
     }
   }
 
-  propagateRelease(scene.nodes);
+  propagateRelease(scene.nodes, scene.fixedCount);
 }
 
-function propagateRelease(nodes) {
-  for (const node of nodes) {
-    if (node.pinned || node.isReleased) {
-      continue;
-    }
-
-    const prevStretch = getStretch(node.prev, node);
-    const nextStretch = getStretch(node, node.next);
-    const threshold = PHYSICS.releaseThreshold + releaseBias(node);
-    if (Math.max(prevStretch, nextStretch) < threshold) {
-      continue;
-    }
-
-    node.isReleased = true;
-    nudgeVelocity(node);
-  }
-}
-
-function releaseBias(node) {
-  return Math.min(node.index * PHYSICS.propagationBoost, 0.18);
-}
-
-function nudgeVelocity(node) {
-  const velocityX = node.x - node.prevX;
-  const velocityY = node.y - node.prevY;
-  node.prevX = node.x - velocityX * 0.6;
-  node.prevY = node.y - velocityY * 0.6;
-}
-
-function getStretch(a, b) {
-  if (!a || !b) {
-    return 0;
-  }
-  return distance(a.x, a.y, b.x, b.y) / Math.max(b.restLength, 0.001);
-}
-
-function constrainNode(node, bounds) {
-  const minX = bounds.left + node.width / 2;
-  const maxX = bounds.right - node.width / 2;
-  const minY = bounds.top + node.height / 2;
-  const maxY = bounds.bottom - node.height / 2;
-
-  node.x = clamp(node.x, minX, maxX);
-  node.y = clamp(node.y, minY, maxY);
-}
-
-function solveDistance(a, b, restLength) {
+function solveDistance(a, b, restLength, grabbedNode) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const current = Math.hypot(dx, dy) || 0.0001;
   const diff = (current - restLength) / current;
 
-  if (a.pinned && !b.pinned) {
+  const aFixed = a.locked || a === grabbedNode;
+  const bFixed = b.locked || b === grabbedNode;
+
+  if (aFixed && bFixed) {
+    return;
+  }
+
+  if (aFixed && !bFixed) {
     b.x -= dx * diff;
     b.y -= dy * diff;
     return;
   }
 
-  if (!a.pinned && b.pinned) {
+  if (!aFixed && bFixed) {
     a.x += dx * diff;
     a.y += dy * diff;
     return;
@@ -423,12 +435,105 @@ function solveDistance(a, b, restLength) {
   b.y -= offsetY;
 }
 
+function solveCollisions(nodes, grabbedNode) {
+  const minDist = PHYSICS.collisionRadius * 2;
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const a = nodes[index];
+    if (a.locked) {
+      continue;
+    }
+
+    for (let otherIndex = index + 1; otherIndex < nodes.length; otherIndex += 1) {
+      if (Math.abs(index - otherIndex) === 1) {
+        continue;
+      }
+
+      const b = nodes[otherIndex];
+      if (b.locked) {
+        continue;
+      }
+
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const current = Math.hypot(dx, dy) || 0.0001;
+      if (current >= minDist) {
+        continue;
+      }
+
+      const overlap = (minDist - current) / current;
+      const aFixed = a === grabbedNode;
+      const bFixed = b === grabbedNode;
+
+      if (aFixed && !bFixed) {
+        b.x += dx * overlap;
+        b.y += dy * overlap;
+        continue;
+      }
+
+      if (!aFixed && bFixed) {
+        a.x -= dx * overlap;
+        a.y -= dy * overlap;
+        continue;
+      }
+
+      a.x -= dx * overlap * 0.5;
+      a.y -= dy * overlap * 0.5;
+      b.x += dx * overlap * 0.5;
+      b.y += dy * overlap * 0.5;
+    }
+  }
+}
+
+function propagateRelease(nodes, fixedCount) {
+  for (let index = nodes.length - 2; index >= fixedCount - 1; index -= 1) {
+    const current = nodes[index];
+    const next = nodes[index + 1];
+    if (!current || !next || !current.locked || next.locked) {
+      continue;
+    }
+
+    const stretch = distance(current.homeX, current.homeY, next.x, next.y);
+    const threshold = next.restLength + PHYSICS.unlockThreshold;
+    if (stretch <= threshold) {
+      continue;
+    }
+
+    current.locked = false;
+    current.px = current.x;
+    current.py = current.y - 0.5;
+  }
+}
+
+function constrainNode(node, bounds) {
+  const minX = bounds.left + node.width / 2;
+  const maxX = bounds.right - node.width / 2;
+  const minY = bounds.top + node.height / 2;
+  const maxY = bounds.bottom - node.height / 2;
+
+  if (node.x < minX) {
+    node.x = minX;
+    node.px = node.x + (node.x - node.px) * PHYSICS.bounce;
+  } else if (node.x > maxX) {
+    node.x = maxX;
+    node.px = node.x + (node.x - node.px) * PHYSICS.bounce;
+  }
+
+  if (node.y < minY) {
+    node.y = minY;
+    node.py = node.y + (node.y - node.py) * PHYSICS.bounce;
+  } else if (node.y > maxY) {
+    node.y = maxY;
+    node.py = node.y + (node.y - node.py) * PHYSICS.bounce;
+  }
+}
+
 function handlePointerDown(state, event) {
   if (state.stage !== "active" || !state.scene) {
     return;
   }
 
-  const node = findClosestNode(state.scene.nodes, event.clientX, event.clientY, PHYSICS.grabRadius);
+  const node = findClosestUnlockedNode(state.scene.nodes, event.clientX, event.clientY, PHYSICS.grabRadius);
   if (!node) {
     return;
   }
@@ -439,8 +544,9 @@ function handlePointerDown(state, event) {
   state.grabbedNode = node;
   state.grabOffsetX = node.x - event.clientX;
   state.grabOffsetY = node.y - event.clientY;
-  node.isReleased = true;
-  nudgeVelocity(node);
+  node.locked = false;
+  node.px = node.x;
+  node.py = node.y;
   state.canvas.setPointerCapture(event.pointerId);
 }
 
@@ -469,40 +575,23 @@ function releasePointer(state) {
   state.grabOffsetY = 0;
 }
 
-function findClosestNode(nodes, x, y, radius) {
-  let bestNode = null;
+function findClosestUnlockedNode(nodes, x, y, radius) {
+  let winner = null;
   let bestDistance = radius;
 
   for (const node of nodes) {
+    if (node.locked) {
+      continue;
+    }
     const current = distance(node.x, node.y, x, y);
-    if (current > bestDistance) {
+    if (current >= bestDistance) {
       continue;
     }
     bestDistance = current;
-    bestNode = node;
+    winner = node;
   }
 
-  return bestNode;
-}
-
-function drawScene(state) {
-  const ctx = state.ctx;
-  ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-
-  if (state.stage !== "active" || !state.scene) {
-    return;
-  }
-
-  ctx.lineWidth = 1.15;
-  ctx.strokeStyle = "rgba(39, 40, 56, 0.45)";
-  ctx.beginPath();
-  for (let index = 1; index < state.scene.nodes.length; index += 1) {
-    const previous = state.scene.nodes[index - 1];
-    const current = state.scene.nodes[index];
-    ctx.moveTo(previous.x, previous.y);
-    ctx.lineTo(current.x, current.y);
-  }
-  ctx.stroke();
+  return winner;
 }
 
 function syncScene(scene, visible) {
@@ -510,6 +599,10 @@ function syncScene(scene, visible) {
     node.el.style.transform = `translate(${node.x - node.width / 2}px, ${node.y - node.height / 2}px)`;
     node.el.style.visibility = visible ? "visible" : "hidden";
   }
+}
+
+function clearCanvas(ctx) {
+  ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 }
 
 function getBounds(state) {
@@ -525,103 +618,89 @@ function getBounds(state) {
   };
 }
 
-function collectElementGlyphs(element) {
-  const textNodes = getTextNodes(element);
-  const glyphs = [];
+function collectPreparedGlyphs(element, measureCtx) {
+  const text = element.textContent || "";
+  if (!text) {
+    return [];
+  }
 
-  for (const textNode of textNodes) {
-    const parent = textNode.parentElement;
-    if (!parent) {
+  const rect = element.getBoundingClientRect();
+  if (!rect.width || !rect.height) {
+    return [];
+  }
+
+  const style = getComputedStyle(element);
+  const font = style.font;
+  measureCtx.font = font;
+
+  const prepared = prepareWithSegments(text, font);
+  const entries = explodePreparedEntries(prepared, measureCtx);
+  const totalWidth = entries.reduce((sum, entry) => sum + entry.width, 0);
+  const startX = rect.left + (rect.width - totalWidth) / 2;
+  const centerY = rect.top + rect.height / 2;
+
+  let x = startX;
+  return entries.map((entry) => {
+    const glyph = {
+      text: entry.text,
+      width: entry.width,
+      height: rect.height,
+      x: x + entry.width / 2,
+      y: centerY,
+      style: pickTextStyles(style)
+    };
+    x += entry.width;
+    return glyph;
+  });
+}
+
+function explodePreparedEntries(prepared, measureCtx) {
+  const entries = [];
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+  for (let index = 0; index < prepared.segments.length; index += 1) {
+    const segment = prepared.segments[index];
+    const graphemeWidths = prepared.breakableWidths[index];
+
+    if (graphemeWidths && graphemeWidths.length) {
+      const graphemes = [...segmenter.segment(segment)].map((part) => part.segment);
+      for (let offset = 0; offset < graphemes.length; offset += 1) {
+        entries.push({
+          text: normalizeGlyphText(graphemes[offset]),
+          width: graphemeWidths[offset] || measureCtx.measureText(graphemes[offset]).width || 1
+        });
+      }
       continue;
     }
 
-    const style = getComputedStyle(parent);
-    const graphemes = segmentText(textNode.textContent || "");
-    let offset = 0;
+    const graphemes = [...segmenter.segment(segment)].map((part) => part.segment);
+    if (graphemes.length <= 1) {
+      entries.push({
+        text: normalizeGlyphText(segment),
+        width: prepared.widths[index] || measureCtx.measureText(segment).width || 1
+      });
+      continue;
+    }
 
     for (const grapheme of graphemes) {
-      const start = offset;
-      const end = start + grapheme.length;
-      offset = end;
-
-      const rect = getTextRect(textNode, start, end);
-      if (!rect) {
-        continue;
-      }
-
-      glyphs.push({
-        char: grapheme,
+      entries.push({
         text: normalizeGlyphText(grapheme),
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-        width: Math.max(rect.width, 1),
-        height: Math.max(rect.height, 1),
-        draw: /\S/.test(grapheme),
-        style: pickTextStyles(style)
+        width: measureCtx.measureText(grapheme).width || 1
       });
     }
   }
 
-  return glyphs;
+  return entries;
 }
 
-function getTextNodes(root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      if (!node.textContent || !node.textContent.length) {
-        return NodeFilter.FILTER_REJECT;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    }
-  });
-
-  const nodes = [];
-  let current = walker.nextNode();
-  while (current) {
-    nodes.push(current);
-    current = walker.nextNode();
-  }
-  return nodes;
-}
-
-function segmentText(text) {
-  if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
-    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-    return [...segmenter.segment(text)].map((segment) => segment.segment);
-  }
-  return Array.from(text);
-}
-
-function getTextRect(textNode, start, end) {
-  const range = document.createRange();
-  range.setStart(textNode, start);
-  range.setEnd(textNode, end);
-
-  const rects = [...range.getClientRects()].filter((rect) => rect.width || rect.height);
-  const lineRect = range.getBoundingClientRect();
-  range.detach?.();
-
-  if (!rects.length || !lineRect.height) {
-    return null;
-  }
-
-  const rect = rects[0];
-  return {
-    left: rect.left,
-    top: rect.top,
-    width: rect.width || rect.height * 0.28,
-    height: rect.height
-  };
-}
-
-function normalizeGlyphText(grapheme) {
-  if (grapheme === " ") {
+function normalizeGlyphText(text) {
+  if (text === " ") {
     return "\u00A0";
   }
-  if (grapheme === "\t") {
+  if (text === "\t") {
     return "\u00A0\u00A0\u00A0\u00A0";
   }
-  return grapheme;
+  return text;
 }
 
 function pickTextStyles(style) {
@@ -633,6 +712,9 @@ function pickTextStyles(style) {
 }
 
 function applyTextStyles(element, styles) {
+  if (!styles) {
+    return;
+  }
   for (const [key, value] of Object.entries(styles)) {
     if (!value) {
       continue;
@@ -650,10 +732,6 @@ function waitForFonts() {
 
 function distance(ax, ay, bx, by) {
   return Math.hypot(bx - ax, by - ay);
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
 }
 
 if (document.readyState === "loading") {
