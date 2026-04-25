@@ -1,4 +1,3 @@
-import { prepareWithSegments } from "./pretext.js";
 
 const PHYSICS = {
   damping: 0.97,
@@ -44,28 +43,20 @@ const TEXT_STYLE_KEYS = [
 function boot() {
   const main = document.querySelector("main[data-puzzle-stage]");
   const trigger = document.querySelector("[data-puzzle-trigger]");
-  const target = document.querySelector("[data-puzzle-linkedin]");
   const glyphLayer = document.querySelector("[data-puzzle-glyph-layer]");
   const resetButton = document.querySelector("[data-puzzle-reset]");
   const walls = document.querySelector("[data-puzzle-walls]");
 
-  if (!main || !trigger || !target || !glyphLayer || !resetButton || !walls) {
-    return;
-  }
-
-  const measureCtx = document.createElement("canvas").getContext("2d");
-  if (!measureCtx) {
+  if (!main || !trigger || !glyphLayer || !resetButton || !walls) {
     return;
   }
 
   const state = {
     main,
     trigger,
-    target,
     glyphLayer,
     resetButton,
     walls,
-    measureCtx,
     stage: "static",
     scene: null,
     prepared: false,
@@ -74,7 +65,8 @@ function boot() {
     accumulator: 0,
     lastTime: -1,
     drags: new Map(),
-    sourceOpacity: target.style.opacity || ""
+    unraveling: false,
+    unravelIdx: -1
   };
 
   bindEvents(state);
@@ -88,86 +80,74 @@ function bindEvents(state) {
     if (state.stage !== "static") {
       return;
     }
-    armPuzzle(state);
-  });
-
-  state.target.addEventListener("click", async (event) => {
-    if (state.stage !== "armed") {
-      return;
-    }
-    event.preventDefault();
-    await activatePuzzle(state);
+    activatePuzzle(state);
   });
 
   state.resetButton.addEventListener("click", () => resetPuzzle(state));
+
+  window.addEventListener("keydown", (e) => {
+    if ((e.key === "f" || e.key === "F") && state.stage === "active" && !state.unraveling) {
+      state.unraveling = true;
+      state.unravelIdx = state.scene.letters.length - 1;
+      while (state.unravelIdx >= 0 && !state.scene.letters[state.unravelIdx].locked) {
+        state.unravelIdx--;
+      }
+    }
+  });
+
   window.addEventListener("resize", () => refreshScene(state));
   window.addEventListener("scroll", () => refreshScene(state), { passive: true });
 }
 
-async function prepareWhenReady(state) {
-  await waitForFonts();
-  prepareScene(state);
-}
-
-function armPuzzle(state) {
-  state.stage = "armed";
-  state.main.dataset.puzzleStage = "armed";
-  state.resetButton.hidden = false;
-}
 
 async function activatePuzzle(state) {
   await waitForFonts();
-  if (!state.prepared) {
-    prepareScene(state);
-  }
+  prepareScene(state);
   if (!state.scene) {
     return;
   }
 
   state.stage = "active";
   state.main.dataset.puzzleStage = "active";
-  unlockTail(state.scene);
-  syncScene(state.scene);
+  state.resetButton.hidden = false;
+
+  for (const el of state.walls.querySelectorAll("[data-puzzle-run]")) {
+    el.dataset.puzzleHidden = "";
+  }
+
+  state.glyphLayer.hidden = false;
   startLoop(state);
 }
 
 function resetPuzzle(state) {
   stopLoop(state);
-  clearDrags(state);
   state.stage = "static";
   state.main.dataset.puzzleStage = "static";
   state.resetButton.hidden = true;
+  state.unraveling = false;
+  state.unravelIdx = -1;
 
-  if (!state.scene) {
-    return;
+  for (const el of state.walls.querySelectorAll("[data-puzzle-run]")) {
+    delete el.dataset.puzzleHidden;
   }
 
-  for (const letter of state.scene.letters) {
-    letter.locked = true;
-    letter.x = letter.ox;
-    letter.y = letter.oy;
-    letter.px = letter.ox;
-    letter.py = letter.oy;
-    setLetterInteractive(letter, false);
-  }
-  syncScene(state.scene);
+  state.glyphLayer.hidden = true;
+  clearScene(state);
+  state.prepared = false;
 }
 
 function prepareScene(state) {
   const previous = state.scene;
   clearScene(state);
 
-  const scene = buildScene(state.target, state.glyphLayer, state.measureCtx);
+  const scene = buildScene(state.walls, state.glyphLayer);
   if (!scene) {
-    state.target.style.opacity = state.sourceOpacity;
     state.prepared = false;
     return;
   }
 
   state.scene = scene;
   state.prepared = true;
-  state.glyphLayer.hidden = false;
-  state.target.style.opacity = "0";
 
   for (const letter of scene.letters) {
     attachDragListeners(letter, state);
@@ -177,26 +157,18 @@ function prepareScene(state) {
     carrySceneState(scene, previous);
   }
 
+  if (state.stage === "active") {
+    state.glyphLayer.hidden = false;
+  }
+
   syncScene(scene);
 }
 
 function refreshScene(state) {
-  if (!state.prepared && state.stage === "static") {
+  if (state.stage !== "active") {
     return;
   }
-
-  const previous = state.scene;
   prepareScene(state);
-  if (!state.scene || !previous) {
-    return;
-  }
-
-  if (state.stage === "active") {
-    const unlockedStart = state.scene.letters.length - Math.min(PHYSICS.tailUnlockCount, state.scene.letters.length - 1);
-    for (let index = unlockedStart; index < state.scene.letters.length; index += 1) {
-      setLetterInteractive(state.scene.letters[index], true);
-    }
-  }
 }
 
 function clearScene(state) {
@@ -207,66 +179,159 @@ function clearScene(state) {
   state.scene = null;
 }
 
-function buildScene(element, glyphLayer, measureCtx) {
-  const text = element.textContent || "";
-  if (!text.trim()) {
+function buildScene(walls, glyphLayer) {
+  const elements = [...walls.querySelectorAll("[data-puzzle-run]")];
+  if (!elements.length) {
     return null;
   }
 
-  const rect = element.getBoundingClientRect();
-  if (!rect.width || !rect.height) {
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  const range = document.createRange();
+  const readingPositions = [];
+  let globalLineHeight = 0;
+  let globalStyle = null;
+
+  for (const el of elements) {
+    const elRect = el.getBoundingClientRect();
+    if (!elRect.width || !elRect.height) {
+      continue;
+    }
+
+    const elStyle = getComputedStyle(el);
+    const elLineHeight = parseFloat(elStyle.lineHeight) || elRect.height;
+    if (!globalLineHeight) {
+      globalLineHeight = elLineHeight;
+      globalStyle = elStyle;
+    }
+
+    let lineIndex = 0;
+    let curLineInkTop = null;
+
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let textNode;
+    while ((textNode = walker.nextNode())) {
+      const parentStyle = getComputedStyle(textNode.parentElement);
+      const textStyles = pickTextStyles(parentStyle);
+
+      let offset = 0;
+      for (const { segment } of segmenter.segment(textNode.textContent)) {
+        range.setStart(textNode, offset);
+        range.setEnd(textNode, offset + segment.length);
+        const rect = range.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          if (curLineInkTop === null) {
+            curLineInkTop = rect.top;
+          } else if (rect.top > curLineInkTop + elLineHeight * 0.5) {
+            lineIndex++;
+            curLineInkTop = rect.top;
+          }
+          const ch = normalizeGlyphText(segment);
+          const glyphY = elRect.top + lineIndex * elLineHeight;
+          readingPositions.push({ x: rect.left, y: glyphY, w: rect.width, ch, textStyles, lineHeight: elLineHeight });
+        }
+        offset += segment.length;
+      }
+    }
+  }
+
+  if (readingPositions.length < 2 || !globalLineHeight) {
     return null;
   }
 
-  const style = getComputedStyle(element);
-  const font = style.font;
-  measureCtx.font = font;
+  // Group reading positions into visual lines by shared y coordinate
+  const lineGroups = groupByVisualLine(readingPositions);
 
-  const prepared = prepareWithSegments(text, font);
-  const graphemes = explodePreparedGlyphs(prepared, measureCtx);
-  if (graphemes.length < 2) {
-    return null;
-  }
+  // Map string index → reading index via zig-zag snake
+  const stringOrder = buildZigzagOrder(lineGroups);
 
-  const totalWidth = graphemes.reduce((sum, glyph) => sum + glyph.w, 0);
-  const startX = rect.left + (rect.width - totalWidth) / 2;
-  const startY = rect.top + (rect.height - rect.height) / 2;
-  const lineHeight = parseFloat(style.lineHeight) || rect.height;
-
-  let cursorX = startX;
-  const letters = graphemes.map((glyph, index) => {
-    const letter = {
-      index,
-      ch: glyph.text,
-      w: glyph.w,
-      h: rect.height,
-      x: cursorX,
-      y: startY,
-      ox: cursorX,
-      oy: startY,
-      px: cursorX,
-      py: startY,
+  const letters = stringOrder.map((readingIdx, si) => {
+    const rp = readingPositions[readingIdx];
+    return {
+      index: si,
+      ch: rp.ch,
+      w: rp.w,
+      h: rp.lineHeight,
+      x: rp.x,
+      y: rp.y,
+      ox: rp.x,
+      oy: rp.y,
+      px: rp.x,
+      py: rp.y,
       locked: true,
-      el: createGlyphElement(glyph.text, glyph.w, rect.height, pickTextStyles(style), glyphLayer)
+      readingIdx,
+      el: createGlyphElement(rp.ch, rp.w, rp.lineHeight, rp.textStyles, glyphLayer)
     };
-    cursorX += glyph.w;
-    return letter;
   });
 
   const restLengths = [];
-  for (let index = 0; index < letters.length - 1; index += 1) {
-    const a = letters[index];
-    const b = letters[index + 1];
-    const dist = Math.hypot((b.ox + b.w / 2) - (a.ox + a.w / 2), (b.oy + lineHeight / 2) - (a.oy + lineHeight / 2));
+  for (let si = 0; si < letters.length - 1; si++) {
+    const a = letters[si];
+    const b = letters[si + 1];
+    const dist = Math.hypot(
+      (b.ox + b.w / 2) - (a.ox + a.w / 2),
+      (b.oy + globalLineHeight / 2) - (a.oy + globalLineHeight / 2)
+    );
     restLengths.push(dist * PHYSICS.constraintStretch);
   }
 
-  return {
-    letters,
-    restLengths,
-    lineHeight,
-    style
-  };
+  // Unlock the tail with progressive sag
+  const unlockCount = Math.min(PHYSICS.tailUnlockCount, Math.max(1, letters.length - 1));
+  const tailStart = letters.length - unlockCount;
+  for (let si = tailStart; si < letters.length; si++) {
+    const letter = letters[si];
+    const sag = (si - tailStart + 1) * PHYSICS.tailSagStep;
+    letter.locked = false;
+    letter.x = letter.ox;
+    letter.y = letter.oy + sag;
+    letter.px = letter.ox;
+    letter.py = letter.y - Math.max(1, sag * 0.85);
+  }
+
+  return { letters, restLengths, lineHeight: globalLineHeight, style: globalStyle };
+}
+
+// Group flat reading-position array into arrays of indices sharing the same visual line (y).
+function groupByVisualLine(readingPositions) {
+  const groups = [];
+  let currentGroup = [];
+  let currentY = null;
+  for (let i = 0; i < readingPositions.length; i++) {
+    const y = readingPositions[i].y;
+    if (currentY === null || Math.abs(y - currentY) > 2) {
+      if (currentGroup.length) {
+        groups.push(currentGroup);
+      }
+      currentGroup = [i];
+      currentY = y;
+    } else {
+      currentGroup.push(i);
+    }
+  }
+  if (currentGroup.length) {
+    groups.push(currentGroup);
+  }
+  return groups;
+}
+
+// Snake through visual lines so the physical string end lands at the natural reading end.
+// Last line is always left-to-right; alternate lines are reversed.
+function buildZigzagOrder(lineGroups) {
+  const N = lineGroups.length;
+  const stringOrder = [];
+  for (let li = 0; li < N; li++) {
+    const indices = lineGroups[li];
+    const reversed = (li % 2) !== ((N - 1) % 2);
+    if (reversed) {
+      for (let i = indices.length - 1; i >= 0; i--) {
+        stringOrder.push(indices[i]);
+      }
+    } else {
+      for (const idx of indices) {
+        stringOrder.push(idx);
+      }
+    }
+  }
+  return stringOrder;
 }
 
 function carrySceneState(nextScene, previousScene) {
@@ -301,29 +366,6 @@ function createGlyphElement(text, width, height, styles, glyphLayer) {
   applyTextStyles(span, styles);
   glyphLayer.appendChild(span);
   return span;
-}
-
-function unlockTail(scene) {
-  const { letters } = scene;
-  const unlockCount = Math.min(PHYSICS.tailUnlockCount, Math.max(1, letters.length - 1));
-  const start = letters.length - unlockCount;
-
-  for (let index = 0; index < letters.length; index += 1) {
-    const letter = letters[index];
-    if (index < start) {
-      letter.locked = true;
-      setLetterInteractive(letter, false);
-      continue;
-    }
-
-    const sag = (index - start + 1) * PHYSICS.tailSagStep;
-    letter.locked = false;
-    letter.x = letter.ox;
-    letter.y = letter.oy + sag;
-    letter.px = letter.ox;
-    letter.py = letter.y - Math.max(1, sag * 0.85);
-    setLetterInteractive(letter, true);
-  }
 }
 
 function setLetterInteractive(letter, interactive) {
@@ -379,6 +421,23 @@ function simulate(state) {
   const { letters, restLengths, lineHeight } = state.scene;
   const draggedIndexes = new Set([...state.drags.values()].map((drag) => drag.idx));
 
+  // Progressive F-key unravel: unlock one letter per simulation step
+  if (state.unraveling) {
+    if (state.unravelIdx < 0) {
+      state.unraveling = false;
+    } else if (letters[state.unravelIdx].locked) {
+      const l = letters[state.unravelIdx];
+      l.locked = false;
+      l.px = l.x;
+      l.py = l.y - 0.5;
+      setLetterInteractive(l, true);
+      state.unravelIdx--;
+    } else {
+      state.unravelIdx--;
+    }
+  }
+
+  // Auto-unlock: when a free letter pulls its locked neighbor past the rest length
   for (let index = letters.length - 2; index >= 0; index -= 1) {
     const current = letters[index];
     const next = letters[index + 1];
@@ -416,7 +475,7 @@ function simulate(state) {
     }
     solveCollisions(letters, draggedIndexes, lineHeight);
     constrainLetters(letters, lineHeight, state.walls.getBoundingClientRect(), draggedIndexes);
-    applyDragPositions(state, lineHeight);
+    applyDragPositions(state);
   }
 }
 
@@ -534,7 +593,7 @@ function constrainLetters(letters, lineHeight, wallRect, draggedIndexes) {
   }
 }
 
-function applyDragPositions(state, lineHeight) {
+function applyDragPositions(state) {
   const rect = state.glyphLayer.getBoundingClientRect();
   for (const [pointerId, drag] of state.drags.entries()) {
     const letter = state.scene?.letters[drag.idx];
@@ -570,30 +629,6 @@ function clearDrags(state) {
   state.drags.clear();
 }
 
-function explodePreparedGlyphs(prepared, measureCtx) {
-  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-  const entries = [];
-
-  for (let index = 0; index < prepared.segments.length; index += 1) {
-    const segment = prepared.segments[index];
-    const breakable = prepared.breakableWidths[index];
-    const graphemes = [...segmenter.segment(segment)].map((part) => part.segment);
-
-    if (breakable && breakable.length === graphemes.length) {
-      for (let gi = 0; gi < graphemes.length; gi += 1) {
-        entries.push({ text: normalizeGlyphText(graphemes[gi]), w: breakable[gi] || 1 });
-      }
-      continue;
-    }
-
-    for (const grapheme of graphemes) {
-      entries.push({ text: normalizeGlyphText(grapheme), w: measureCtx.measureText(grapheme).width || 1 });
-    }
-  }
-
-  return entries;
-}
-
 function normalizeGlyphText(text) {
   if (text === " ") {
     return "\u00A0";
@@ -621,15 +656,15 @@ function applyTextStyles(element, styles) {
   }
 }
 
+async function prepareWhenReady(state) {
+  await waitForFonts();
+}
+
 function waitForFonts() {
   if (!document.fonts || typeof document.fonts.ready?.then !== "function") {
     return Promise.resolve();
   }
   return document.fonts.ready.catch(() => undefined);
-}
-
-function distance(ax, ay, bx, by) {
-  return Math.hypot(bx - ax, by - ay);
 }
 
 function handleGlyphPointerDown(state, index, event) {
@@ -675,22 +710,14 @@ function handleGlyphPointerUp(state, event) {
   state.drags.delete(event.pointerId);
 }
 
-function handleGlobalPointerMove(state, event) {
-  handleGlyphPointerMove(state, event);
-}
-
-function handleGlobalPointerUp(state, event) {
-  handleGlyphPointerUp(state, event);
-}
-
 function attachDragListeners(letter, state) {
   letter.el.addEventListener("pointerdown", (event) => handleGlyphPointerDown(state, letter.index, event));
 }
 
 function installPointerDelegation(state) {
-  window.addEventListener("pointermove", (event) => handleGlobalPointerMove(state, event));
-  window.addEventListener("pointerup", (event) => handleGlobalPointerUp(state, event));
-  window.addEventListener("pointercancel", (event) => handleGlobalPointerUp(state, event));
+  window.addEventListener("pointermove", (event) => handleGlyphPointerMove(state, event));
+  window.addEventListener("pointerup", (event) => handleGlyphPointerUp(state, event));
+  window.addEventListener("pointercancel", (event) => handleGlyphPointerUp(state, event));
 }
 
 if (document.readyState === "loading") {
