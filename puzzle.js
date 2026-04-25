@@ -1,3 +1,4 @@
+import { prepareWithSegments, layoutWithLines } from "./pretext.js";
 
 const PHYSICS = {
   damping: 0.97,
@@ -10,7 +11,10 @@ const PHYSICS = {
   fixedStep: 1 / 120,
   maxFrame: 1 / 20,
   tailUnlockCount: 6,
-  tailSagStep: 3.5
+  tailSagStep: 3.5,
+  separatorSpringK: 0.15,
+  separatorDamping: 0.85,
+  separatorGlyphMass: 0.08
 };
 
 const TEXT_STYLE_KEYS = [
@@ -46,6 +50,7 @@ function boot() {
   const glyphLayer = document.querySelector("[data-puzzle-glyph-layer]");
   const resetButton = document.querySelector("[data-puzzle-reset]");
   const walls = document.querySelector("[data-puzzle-walls]");
+  const separator = document.querySelector("[data-puzzle-separator]");
 
   if (!main || !trigger || !glyphLayer || !resetButton || !walls) {
     return;
@@ -57,21 +62,22 @@ function boot() {
     glyphLayer,
     resetButton,
     walls,
+    separator,
     stage: "static",
-    scene: null,
+    scenes: [],
     prepared: false,
     running: false,
     rafId: 0,
     accumulator: 0,
     lastTime: -1,
     drags: new Map(),
-    unraveling: false,
-    unravelIdx: -1
+    separatorDisplacement: 0,
+    separatorVelocity: 0
   };
 
   bindEvents(state);
   installPointerDelegation(state);
-  prepareWhenReady(state);
+  prepareWhenReady();
 }
 
 function bindEvents(state) {
@@ -86,11 +92,15 @@ function bindEvents(state) {
   state.resetButton.addEventListener("click", () => resetPuzzle(state));
 
   window.addEventListener("keydown", (e) => {
-    if ((e.key === "f" || e.key === "F") && state.stage === "active" && !state.unraveling) {
-      state.unraveling = true;
-      state.unravelIdx = state.scene.letters.length - 1;
-      while (state.unravelIdx >= 0 && !state.scene.letters[state.unravelIdx].locked) {
-        state.unravelIdx--;
+    if ((e.key === "f" || e.key === "F") && state.stage === "active") {
+      for (const scene of state.scenes) {
+        if (!scene.unraveling) {
+          scene.unraveling = true;
+          scene.unravelIdx = scene.letters.length - 1;
+          while (scene.unravelIdx >= 0 && !scene.letters[scene.unravelIdx].locked) {
+            scene.unravelIdx--;
+          }
+        }
       }
     }
   });
@@ -103,7 +113,7 @@ function bindEvents(state) {
 async function activatePuzzle(state) {
   await waitForFonts();
   prepareScene(state);
-  if (!state.scene) {
+  if (!state.scenes.length) {
     return;
   }
 
@@ -124,8 +134,6 @@ function resetPuzzle(state) {
   state.stage = "static";
   state.main.dataset.puzzleStage = "static";
   state.resetButton.hidden = true;
-  state.unraveling = false;
-  state.unravelIdx = -1;
 
   for (const el of state.walls.querySelectorAll("[data-puzzle-run]")) {
     delete el.dataset.puzzleHidden;
@@ -134,34 +142,45 @@ function resetPuzzle(state) {
   state.glyphLayer.hidden = true;
   clearScene(state);
   state.prepared = false;
+  state.separatorDisplacement = 0;
+  state.separatorVelocity = 0;
+  if (state.separator) {
+    state.separator.style.transform = "";
+  }
 }
 
 function prepareScene(state) {
-  const previous = state.scene;
+  const previousScenes = state.scenes;
   clearScene(state);
 
-  const scene = buildScene(state.walls, state.glyphLayer);
-  if (!scene) {
+  const scenes = buildAllScenes(state.walls, state.glyphLayer);
+  if (!scenes.length) {
     state.prepared = false;
     return;
   }
 
-  state.scene = scene;
+  state.scenes = scenes;
   state.prepared = true;
 
-  for (const letter of scene.letters) {
-    attachDragListeners(letter, state);
+  for (const scene of scenes) {
+    for (const letter of scene.letters) {
+      attachDragListeners(letter, state, scene);
+    }
   }
 
-  if (previous) {
-    carrySceneState(scene, previous);
+  for (let i = 0; i < scenes.length; i++) {
+    if (previousScenes[i]) {
+      carrySceneState(scenes[i], previousScenes[i]);
+    }
   }
 
   if (state.stage === "active") {
     state.glyphLayer.hidden = false;
   }
 
-  syncScene(scene);
+  for (const scene of scenes) {
+    syncScene(scene);
+  }
 }
 
 function refreshScene(state) {
@@ -172,69 +191,147 @@ function refreshScene(state) {
 }
 
 function clearScene(state) {
-  if (state.scene) {
+  if (state.scenes.length) {
     clearDrags(state);
   }
   state.glyphLayer.textContent = "";
-  state.scene = null;
+  state.scenes = [];
 }
 
-function buildScene(walls, glyphLayer) {
-  const elements = [...walls.querySelectorAll("[data-puzzle-run]")];
-  if (!elements.length) {
+// --- Measurement helpers ---
+
+function buildCanvasFont(computedStyle) {
+  const weight = computedStyle.fontWeight;
+  const size = computedStyle.fontSize;
+  const family = computedStyle.fontFamily;
+  return `${weight} ${size} ${family}`;
+}
+
+function buildStyleMap(el) {
+  const ranges = [];
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let charOffset = 0;
+  let textNode;
+  while ((textNode = walker.nextNode())) {
+    const len = textNode.textContent.length;
+    const styles = pickTextStyles(getComputedStyle(textNode.parentElement));
+    ranges.push({ start: charOffset, end: charOffset + len, styles });
+    charOffset += len;
+  }
+  return ranges;
+}
+
+function lookupStyles(styleMap, charOffset) {
+  for (const range of styleMap) {
+    if (charOffset >= range.start && charOffset < range.end) {
+      return range.styles;
+    }
+  }
+  return styleMap.length ? styleMap[styleMap.length - 1].styles : {};
+}
+
+// --- Scene building ---
+
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function buildElementScene(el, glyphLayer) {
+  const text = el.textContent;
+  if (!text.trim()) {
     return null;
   }
 
-  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-  const range = document.createRange();
+  const elRect = el.getBoundingClientRect();
+  if (!elRect.width || !elRect.height) {
+    return null;
+  }
+
+  const elStyle = getComputedStyle(el);
+  const lineHeight = parseFloat(elStyle.lineHeight) || elRect.height;
+  const font = buildCanvasFont(elStyle);
+  const maxWidth = elRect.width;
+
+  const prepared = prepareWithSegments(text, font);
+  const { lines } = layoutWithLines(prepared, maxWidth, lineHeight);
+
+  const styleMap = buildStyleMap(el);
+
+  // Precompute character offset for each segment
+  const segCharOffsets = new Array(prepared.segments.length);
+  let off = 0;
+  for (let i = 0; i < prepared.segments.length; i++) {
+    segCharOffsets[i] = off;
+    off += prepared.segments[i].length;
+  }
+
+  // Extract per-grapheme reading positions from pretext layout
   const readingPositions = [];
-  let globalLineHeight = 0;
-  let globalStyle = null;
 
-  for (const el of elements) {
-    const elRect = el.getBoundingClientRect();
-    if (!elRect.width || !elRect.height) {
-      continue;
-    }
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    let xCursor = elRect.left;
+    const y = elRect.top + li * lineHeight;
 
-    const elStyle = getComputedStyle(el);
-    const elLineHeight = parseFloat(elStyle.lineHeight) || elRect.height;
-    if (!globalLineHeight) {
-      globalLineHeight = elLineHeight;
-      globalStyle = elStyle;
-    }
+    // Walk segments within this line's range
+    for (let si = line.start.segmentIndex; si <= line.end.segmentIndex && si < prepared.segments.length; si++) {
+      const segKind = prepared.kinds[si];
 
-    let lineIndex = 0;
-    let curLineInkTop = null;
+      // Skip non-visible segments
+      if (segKind === "hard-break" || segKind === "soft-hyphen" || segKind === "zero-width-break") {
+        continue;
+      }
 
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    let textNode;
-    while ((textNode = walker.nextNode())) {
-      const parentStyle = getComputedStyle(textNode.parentElement);
-      const textStyles = pickTextStyles(parentStyle);
+      // Determine grapheme range within this segment for this line
+      const graphemes = [...graphemeSegmenter.segment(prepared.segments[si])].map(g => g.segment);
+      const startG = (si === line.start.segmentIndex) ? line.start.graphemeIndex : 0;
+      const endG = (si === line.end.segmentIndex) ? line.end.graphemeIndex : graphemes.length;
 
-      let offset = 0;
-      for (const { segment } of segmenter.segment(textNode.textContent)) {
-        range.setStart(textNode, offset);
-        range.setEnd(textNode, offset + segment.length);
-        const rect = range.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          if (curLineInkTop === null) {
-            curLineInkTop = rect.top;
-          } else if (rect.top > curLineInkTop + elLineHeight * 0.5) {
-            lineIndex++;
-            curLineInkTop = rect.top;
-          }
-          const ch = normalizeGlyphText(segment);
-          const glyphY = elRect.top + lineIndex * elLineHeight;
-          readingPositions.push({ x: rect.left, y: glyphY, w: rect.width, ch, textStyles, lineHeight: elLineHeight });
+      // Get per-grapheme widths
+      const breakable = prepared.breakableWidths[si];
+      let graphemeWidths;
+      if (breakable) {
+        graphemeWidths = breakable;
+      } else if (graphemes.length === 1) {
+        graphemeWidths = [prepared.widths[si]];
+      } else {
+        // Multi-grapheme but no breakable widths (e.g. CJK unit) — distribute evenly
+        const perG = prepared.widths[si] / graphemes.length;
+        graphemeWidths = graphemes.map(() => perG);
+      }
+
+      const segCharOffset = segCharOffsets[si];
+
+      for (let gi = startG; gi < endG; gi++) {
+        const ch = graphemes[gi];
+        const w = graphemeWidths[gi] || 0;
+
+        // Skip zero-width glyphs
+        if (w <= 0) {
+          continue;
         }
-        offset += segment.length;
+
+        // Compute character offset within the full text for style lookup
+        let charOffsetForG = segCharOffset;
+        for (let k = 0; k < gi; k++) {
+          charOffsetForG += graphemes[k].length;
+        }
+
+        const textStyles = lookupStyles(styleMap, charOffsetForG);
+        const normalizedCh = normalizeGlyphText(ch);
+
+        readingPositions.push({
+          x: xCursor,
+          y,
+          w,
+          ch: normalizedCh,
+          textStyles,
+          lineHeight
+        });
+        xCursor += w;
       }
     }
   }
 
-  if (readingPositions.length < 2 || !globalLineHeight) {
+  if (readingPositions.length < 2) {
     return null;
   }
 
@@ -269,7 +366,7 @@ function buildScene(walls, glyphLayer) {
     const b = letters[si + 1];
     const dist = Math.hypot(
       (b.ox + b.w / 2) - (a.ox + a.w / 2),
-      (b.oy + globalLineHeight / 2) - (a.oy + globalLineHeight / 2)
+      (b.oy + lineHeight / 2) - (a.oy + lineHeight / 2)
     );
     restLengths.push(dist * PHYSICS.constraintStretch);
   }
@@ -287,7 +384,27 @@ function buildScene(walls, glyphLayer) {
     letter.py = letter.y - Math.max(1, sag * 0.85);
   }
 
-  return { letters, restLengths, lineHeight: globalLineHeight, style: globalStyle };
+  return {
+    letters,
+    restLengths,
+    lineHeight,
+    style: elStyle,
+    element: el,
+    unraveling: false,
+    unravelIdx: -1
+  };
+}
+
+function buildAllScenes(walls, glyphLayer) {
+  const elements = [...walls.querySelectorAll("[data-puzzle-run]")];
+  const scenes = [];
+  for (const el of elements) {
+    const scene = buildElementScene(el, glyphLayer);
+    if (scene) {
+      scenes.push(scene);
+    }
+  }
+  return scenes;
 }
 
 // Group flat reading-position array into arrays of indices sharing the same visual line (y).
@@ -394,7 +511,7 @@ function stopLoop(state) {
 }
 
 function tick(state, now) {
-  if (!state.running || state.stage !== "active" || !state.scene) {
+  if (!state.running || state.stage !== "active" || !state.scenes.length) {
     return;
   }
 
@@ -413,69 +530,111 @@ function tick(state, now) {
     state.accumulator -= PHYSICS.fixedStep;
   }
 
-  syncScene(state.scene);
+  for (const scene of state.scenes) {
+    syncScene(scene);
+  }
+
+  if (state.separator) {
+    state.separator.style.transform = `translateY(${state.separatorDisplacement}px)`;
+  }
+
   state.rafId = requestAnimationFrame((time) => tick(state, time));
 }
 
 function simulate(state) {
-  const { letters, restLengths, lineHeight } = state.scene;
-  const draggedIndexes = new Set([...state.drags.values()].map((drag) => drag.idx));
+  const wallRect = state.walls.getBoundingClientRect();
 
-  // Progressive F-key unravel: unlock one letter per simulation step
-  if (state.unraveling) {
-    if (state.unravelIdx < 0) {
-      state.unraveling = false;
-    } else if (letters[state.unravelIdx].locked) {
-      const l = letters[state.unravelIdx];
-      l.locked = false;
-      l.px = l.x;
-      l.py = l.y - 0.5;
-      setLetterInteractive(l, true);
-      state.unravelIdx--;
-    } else {
-      state.unravelIdx--;
+  // Per-scene physics
+  for (const scene of state.scenes) {
+    const { letters, restLengths, lineHeight } = scene;
+    const draggedIndexes = new Set();
+    for (const [, drag] of state.drags.entries()) {
+      if (drag.scene === scene) {
+        draggedIndexes.add(drag.letterIdx);
+      }
+    }
+
+    // Progressive F-key unravel: unlock one letter per simulation step
+    if (scene.unraveling) {
+      if (scene.unravelIdx < 0) {
+        scene.unraveling = false;
+      } else if (letters[scene.unravelIdx].locked) {
+        const l = letters[scene.unravelIdx];
+        l.locked = false;
+        l.px = l.x;
+        l.py = l.y - 0.5;
+        setLetterInteractive(l, true);
+        scene.unravelIdx--;
+      } else {
+        scene.unravelIdx--;
+      }
+    }
+
+    // Auto-unlock: when a free letter pulls its locked neighbor past the rest length
+    for (let index = letters.length - 2; index >= 0; index -= 1) {
+      const current = letters[index];
+      const next = letters[index + 1];
+      if (!current.locked || next.locked) {
+        continue;
+      }
+      const dx = (next.x + next.w / 2) - (current.ox + current.w / 2);
+      const dy = (next.y + lineHeight / 2) - (current.oy + lineHeight / 2);
+      const dist = Math.hypot(dx, dy);
+      if (dist <= restLengths[index] + PHYSICS.unlockThreshold) {
+        continue;
+      }
+      current.locked = false;
+      current.px = current.x;
+      current.py = current.y - 1;
+      setLetterInteractive(current, true);
+    }
+
+    // Verlet integration
+    for (let index = 0; index < letters.length; index += 1) {
+      const letter = letters[index];
+      if (letter.locked || draggedIndexes.has(index)) {
+        continue;
+      }
+      const vx = (letter.x - letter.px) * PHYSICS.damping;
+      const vy = (letter.y - letter.py) * PHYSICS.damping;
+      letter.px = letter.x;
+      letter.py = letter.y;
+      letter.x += vx;
+      letter.y += vy + PHYSICS.gravity;
+    }
+
+    // Constraint solving
+    for (let iter = 0; iter < PHYSICS.iterations; iter += 1) {
+      for (let index = 0; index < letters.length - 1; index += 1) {
+        solveDistance(letters[index], letters[index + 1], restLengths[index], draggedIndexes.has(index), draggedIndexes.has(index + 1), lineHeight);
+      }
+      solveCollisionsInScene(letters, draggedIndexes, lineHeight);
+      constrainLetters(letters, lineHeight, wallRect, draggedIndexes);
+      applyDragPositionsForScene(state, scene);
     }
   }
 
-  // Auto-unlock: when a free letter pulls its locked neighbor past the rest length
-  for (let index = letters.length - 2; index >= 0; index -= 1) {
-    const current = letters[index];
-    const next = letters[index + 1];
-    if (!current.locked || next.locked) {
-      continue;
-    }
-    const dx = (next.x + next.w / 2) - (current.ox + current.w / 2);
-    const dy = (next.y + lineHeight / 2) - (current.oy + lineHeight / 2);
-    const dist = Math.hypot(dx, dy);
-    if (dist <= restLengths[index] + PHYSICS.unlockThreshold) {
-      continue;
-    }
-    current.locked = false;
-    current.px = current.x;
-    current.py = current.y - 1;
-    setLetterInteractive(current, true);
+  // Cross-scene collision detection
+  if (state.scenes.length > 1) {
+    solveCollisionsCross(state);
   }
 
-  for (let index = 0; index < letters.length; index += 1) {
-    const letter = letters[index];
-    if (letter.locked || draggedIndexes.has(index)) {
-      continue;
+  // Separator spring physics
+  if (state.separator) {
+    let unlockedCount = 0;
+    for (const scene of state.scenes) {
+      for (const letter of scene.letters) {
+        if (!letter.locked) unlockedCount++;
+      }
     }
-    const vx = (letter.x - letter.px) * PHYSICS.damping;
-    const vy = (letter.y - letter.py) * PHYSICS.damping;
-    letter.px = letter.x;
-    letter.py = letter.y;
-    letter.x += vx;
-    letter.y += vy + PHYSICS.gravity;
-  }
-
-  for (let iter = 0; iter < PHYSICS.iterations; iter += 1) {
-    for (let index = 0; index < letters.length - 1; index += 1) {
-      solveDistance(letters[index], letters[index + 1], restLengths[index], draggedIndexes.has(index), draggedIndexes.has(index + 1), lineHeight);
+    const weight = unlockedCount * PHYSICS.separatorGlyphMass * PHYSICS.gravity;
+    const spring = -PHYSICS.separatorSpringK * state.separatorDisplacement;
+    state.separatorVelocity = (state.separatorVelocity + weight + spring) * PHYSICS.separatorDamping;
+    state.separatorDisplacement += state.separatorVelocity;
+    if (state.separatorDisplacement < 0) {
+      state.separatorDisplacement = 0;
+      state.separatorVelocity = 0;
     }
-    solveCollisions(letters, draggedIndexes, lineHeight);
-    constrainLetters(letters, lineHeight, state.walls.getBoundingClientRect(), draggedIndexes);
-    applyDragPositions(state);
   }
 }
 
@@ -515,7 +674,7 @@ function solveDistance(a, b, restLength, aDragged, bDragged, lineHeight) {
   }
 }
 
-function solveCollisions(letters, draggedIndexes, lineHeight) {
+function solveCollisionsInScene(letters, draggedIndexes, lineHeight) {
   const minDist = PHYSICS.collisionRadius * 2;
 
   for (let index = 0; index < letters.length; index += 1) {
@@ -562,6 +721,42 @@ function solveCollisions(letters, draggedIndexes, lineHeight) {
   }
 }
 
+function solveCollisionsCross(state) {
+  const minDist = PHYSICS.collisionRadius * 2;
+  const allUnlocked = [];
+
+  for (const scene of state.scenes) {
+    for (const letter of scene.letters) {
+      if (!letter.locked) {
+        allUnlocked.push(letter);
+      }
+    }
+  }
+
+  for (let i = 0; i < allUnlocked.length; i++) {
+    const a = allUnlocked[i];
+    const acx = a.x + a.w / 2;
+    const acy = a.y + a.h / 2;
+
+    for (let j = i + 1; j < allUnlocked.length; j++) {
+      const b = allUnlocked[j];
+      const bcx = b.x + b.w / 2;
+      const bcy = b.y + b.h / 2;
+      const dx = bcx - acx;
+      const dy = bcy - acy;
+      const dist = Math.hypot(dx, dy) || 0.001;
+      if (dist >= minDist) {
+        continue;
+      }
+      const overlap = (minDist - dist) / dist * 0.5;
+      a.x -= dx * overlap;
+      a.y -= dy * overlap;
+      b.x += dx * overlap;
+      b.y += dy * overlap;
+    }
+  }
+}
+
 function constrainLetters(letters, lineHeight, wallRect, draggedIndexes) {
   const minX = -wallRect.left;
   const minY = -wallRect.top;
@@ -593,10 +788,13 @@ function constrainLetters(letters, lineHeight, wallRect, draggedIndexes) {
   }
 }
 
-function applyDragPositions(state) {
+function applyDragPositionsForScene(state, scene) {
   const rect = state.glyphLayer.getBoundingClientRect();
   for (const [pointerId, drag] of state.drags.entries()) {
-    const letter = state.scene?.letters[drag.idx];
+    if (drag.scene !== scene) {
+      continue;
+    }
+    const letter = scene.letters[drag.letterIdx];
     if (!letter) {
       state.drags.delete(pointerId);
       continue;
@@ -621,7 +819,7 @@ function syncScene(scene) {
 
 function clearDrags(state) {
   for (const drag of state.drags.values()) {
-    const letter = state.scene?.letters[drag.idx];
+    const letter = drag.scene?.letters[drag.letterIdx];
     if (letter) {
       letter.el.classList.remove("dragging");
     }
@@ -656,7 +854,7 @@ function applyTextStyles(element, styles) {
   }
 }
 
-async function prepareWhenReady(state) {
+async function prepareWhenReady() {
   await waitForFonts();
 }
 
@@ -667,18 +865,19 @@ function waitForFonts() {
   return document.fonts.ready.catch(() => undefined);
 }
 
-function handleGlyphPointerDown(state, index, event) {
-  if (state.stage !== "active" || !state.scene) {
+function handleGlyphPointerDown(state, scene, letterIdx, event) {
+  if (state.stage !== "active" || !state.scenes.length) {
     return;
   }
-  const letter = state.scene.letters[index];
+  const letter = scene.letters[letterIdx];
   if (!letter || letter.locked || state.drags.has(event.pointerId)) {
     return;
   }
 
   const rect = state.glyphLayer.getBoundingClientRect();
   state.drags.set(event.pointerId, {
-    idx: index,
+    scene,
+    letterIdx,
     offsetX: event.clientX - rect.left - letter.x,
     offsetY: event.clientY - rect.top - letter.y,
     clientX: event.clientX,
@@ -703,15 +902,15 @@ function handleGlyphPointerUp(state, event) {
   if (!drag) {
     return;
   }
-  const letter = state.scene?.letters[drag.idx];
+  const letter = drag.scene?.letters[drag.letterIdx];
   if (letter) {
     letter.el.classList.remove("dragging");
   }
   state.drags.delete(event.pointerId);
 }
 
-function attachDragListeners(letter, state) {
-  letter.el.addEventListener("pointerdown", (event) => handleGlyphPointerDown(state, letter.index, event));
+function attachDragListeners(letter, state, scene) {
+  letter.el.addEventListener("pointerdown", (event) => handleGlyphPointerDown(state, scene, letter.index, event));
 }
 
 function installPointerDelegation(state) {

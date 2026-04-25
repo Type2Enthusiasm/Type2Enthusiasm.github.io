@@ -130,6 +130,8 @@ body{
 
 
 /* ===== Main content ===== */
+main{ font-feature-settings: "liga" 1, "kern" 0; }
+
 .content{
   width:100%;
   flex:1 0 auto;
@@ -201,10 +203,19 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
 .table{ width:100%; border-collapse:collapse }
 .table th,.table td{ padding:.5rem .4rem; border-bottom:1px solid var(--hairline); text-align:left }
 
+/* Separator */
+.puzzle-separator{
+  width:100%;
+  max-width:var(--container);
+  margin:0 auto;
+  height:1px;
+  background:var(--hairline);
+  will-change:transform;
+}
+
 /* Footer */
 footer{
   width:100%;
-  border-top:1px solid var(--hairline);
   padding:1rem 0 3rem;
   margin-top:0;
 }
