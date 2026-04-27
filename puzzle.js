@@ -90,9 +90,7 @@ const PHYSICS = {
   // Added to `gravity` for letters/line while sweeping (keeps a brisk exit).
   revealSweepExtraGravity: 0.1,
   // Minimum ticks the reveal stays in the unwind phase once it starts.
-  revealUnravelMinTicks: 150,
-  // Delay opacity fade so the falling glyphs and line are visible first.
-  revealSweepFadeStartTicks: 240,
+  revealUnravelMinTicks: 300,
   // Minimum ticks spent sweeping before quotes can fade in.
   revealSweepMinTicks: 420,
   // Fallback ticks before revealing even if a long chain is still visible.
@@ -1427,7 +1425,8 @@ function applyRevealSweepForces(state) {
       if (letter.locked) {
         continue;
       }
-      letter.el.style.opacity = String(getRevealSweepOpacity(state));
+      // Stay fully visible while falling; opacity goes to 0 in moveUnlockedGlyphsOffscreen.
+      letter.el.style.opacity = "1";
       setLetterInteractive(letter, false);
     }
   }
@@ -1435,20 +1434,9 @@ function applyRevealSweepForces(state) {
   if (state.snappedTopLine) {
     state.snappedTopLine.sleeping = false;
     if (state.ceiling) {
-      state.ceiling.style.setProperty("--puzzle-ceiling-opacity", String(getRevealSweepOpacity(state)));
+      state.ceiling.style.setProperty("--puzzle-ceiling-opacity", "1");
     }
   }
-}
-
-function getRevealSweepOpacity(state) {
-  const sweepMinTicks = PHYSICS.revealSweepMinTicks;
-  const fadeStartTicks = PHYSICS.revealSweepFadeStartTicks;
-  const fadeTicks = Math.max(1, sweepMinTicks - fadeStartTicks);
-  const progress = Math.max(
-    0,
-    Math.min(1, (state.revealTicks - fadeStartTicks) / fadeTicks)
-  );
-  return Math.max(0, 1 - progress);
 }
 
 function allRevealObjectsOffscreen(state) {
