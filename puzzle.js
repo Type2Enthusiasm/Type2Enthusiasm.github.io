@@ -62,21 +62,31 @@ const PHYSICS = {
   snappedLineTorqueScale: 0.0008,
   // Below this linear/angular speed, the snapped line can sleep after landing.
   snappedLineSleepVelocity: 0.08,
-  // Reveal: calmer than full rigid-body, but still damped and angle-limited.
+  // Reveal, Verlet line path: unused while the header uses kinematic fall (see
+  // updateSnappedTopLineKinematic); kept if we ever disable kinematic mode.
   snappedLineRevealAngularDamping: 0.68,
   snappedLineRevealMaxAngle: 0.36,
-  // Extra damping on horizontal spin only during reveal (keeps a smooth fall).
   snappedLineRevealLateralDamping: 0.92,
   snappedLineRevealSpinDamping: 0.9,
-  // When glyphs depenetrate the snapped line, push the bar back (reaction) so
-  // the line does not look weightless.
+  // Depenetration reaction on the **bar** (skipped during reveal; letters only).
   snappedLineGlyphReactionLinear: 0.014,
   snappedLineGlyphReactionTorque: 0.00045,
   snappedLineGlyphReactionMaxDV: 0.12,
   snappedLineGlyphReactionMaxDomega: 0.02,
-  // Weaker reactions while the line is in the long reveal (less wiggle, still responsive).
   snappedLineGlyphReactionRevealLinearScale: 0.5,
   snappedLineGlyphReactionRevealTorqueScale: 0.38,
+  // Kinematic fall for the snapped `::after` line during unravel + sweep.
+  revealLineKinematicDurationTicks: 600,
+  revealLineKinematicDurationTicksReduced: 200,
+  revealLineKinematicBottomPadding: 64,
+  revealLineWobbleAmplitude: 0.055,
+  revealLineWobbleOmega: 0.042,
+  revealLineNudgeK: 0.14,
+  revealLineNudgeAngleK: 0.00012,
+  revealLineNudgeSmooth: 0.085,
+  revealLineNudgeHorizontalMargin: 24,
+  revealLineNudgeMaxPx: 32,
+  revealLineNudgeAngleMax: 0.12,
   // Added to `gravity` for letters/line while sweeping (keeps a brisk exit).
   revealSweepExtraGravity: 0.1,
   // Minimum ticks the reveal stays in the unwind phase once it starts.
@@ -176,7 +186,8 @@ function boot() {
     revealScrollLocked: false,
     revealScrollY: 0,
     revealLayoutTimer: 0,
-    rewardUnlocked: false
+    rewardUnlocked: false,
+    smoothedLineNudgeY: 0
   };
 
   initRewardContent(state);
@@ -275,6 +286,7 @@ function resetPuzzle(state) {
   state.revealScrollY = 0;
   clearRevealLayout(state);
   state.rewardUnlocked = false;
+  state.smoothedLineNudgeY = 0;
   if (state.separator) {
     state.separator.style.transform = "";
     state.separator.classList.remove("is-compressing");
@@ -1317,26 +1329,22 @@ function snapTopLine(state, topBar, loadCenterX) {
     return;
   }
 
-  const offCenter = loadCenterX - topBar.cx;
-  const normalizedLoad = Math.max(-1, Math.min(1, offCenter / Math.max(1, topBar.width / 2)));
-  const loadDirection = normalizedLoad === 0 ? 1 : Math.sign(normalizedLoad);
-  const lateralVelocity = normalizedLoad * 0.7 + loadDirection * 0.18;
-  const angularVelocity = Math.max(
-    -0.075,
-    Math.min(0.075, offCenter * PHYSICS.snappedLineTorqueScale + loadDirection * 0.018)
-  );
-
+  void loadCenterX;
   state.topLineSnapped = true;
+  state.smoothedLineNudgeY = 0;
   state.snappedTopLine = {
     cx: topBar.cx,
     cy: topBar.cy,
     width: topBar.width,
     thickness: topBar.thickness,
     angle: 0,
-    vx: lateralVelocity,
-    vy: Math.max(0.5, state.ceilingVelocity),
-    angularVelocity,
-    sleeping: false
+    vx: 0,
+    vy: 0,
+    angularVelocity: 0,
+    sleeping: false,
+    _fallY0: topBar.cy,
+    _fallCx0: topBar.cx,
+    _kinematicTick: 0
   };
   state.ceilingDisplacement = 0;
   state.ceilingVelocity = 0;
@@ -1367,6 +1375,7 @@ function startRevealSequence(state) {
   lockRevealScroll(state);
   state.revealPhase = "unraveling";
   state.revealTicks = 0;
+  state.smoothedLineNudgeY = 0;
   startUnravelAllScenes(state);
 }
 
@@ -1599,27 +1608,110 @@ function clearRevealLayout(state) {
   state.walls.style.removeProperty("--puzzle-reveal-min-height");
 }
 
+function easeInCubic(u) {
+  return u * u * u;
+}
+
+function updateKinematicLineLetterNudge(state, bar, easeCy, easeCx) {
+  const halfW = bar.width / 2;
+  const m = PHYSICS.revealLineNudgeHorizontalMargin;
+  let sumY = 0;
+  let count = 0;
+  for (const scene of state.scenes) {
+    for (const letter of scene.letters) {
+      if (letter.locked) {
+        continue;
+      }
+      const lcx = letter.x + letter.w / 2;
+      if (Math.abs(lcx - easeCx) > halfW + m) {
+        continue;
+      }
+      sumY += letter.y + letter.h / 2;
+      count += 1;
+    }
+  }
+  const e = count > 0 ? sumY / count - easeCy : 0;
+  const a = PHYSICS.revealLineNudgeSmooth;
+  state.smoothedLineNudgeY += a * (e - state.smoothedLineNudgeY);
+}
+
+function updateSnappedTopLineKinematic(state, bar) {
+  bar._kinematicTick = (bar._kinematicTick || 0) + 1;
+  const t = bar._kinematicTick;
+  if (bar._fallY0 === undefined) {
+    bar._fallY0 = bar.cy;
+  }
+  if (bar._fallCx0 === undefined) {
+    bar._fallCx0 = bar.cx;
+  }
+  const reduce = prefersReducedMotion();
+  const T = reduce
+    ? PHYSICS.revealLineKinematicDurationTicksReduced
+    : PHYSICS.revealLineKinematicDurationTicks;
+  const u = Math.min(1, t / T);
+  const ease = easeInCubic(u);
+  const h = window.innerHeight;
+  const yEnd = h + PHYSICS.revealOffscreenMargin + PHYSICS.revealLineKinematicBottomPadding;
+  const easeCy = bar._fallY0 + (yEnd - bar._fallY0) * ease;
+  const attached = buildAttachedTopBar(state);
+  const easeCx = bar._fallCx0 + (attached.cx - bar._fallCx0) * ease;
+
+  updateKinematicLineLetterNudge(state, bar, easeCy, easeCx);
+  const nudgeY = Math.max(
+    -PHYSICS.revealLineNudgeMaxPx,
+    Math.min(
+      PHYSICS.revealLineNudgeMaxPx,
+      PHYSICS.revealLineNudgeK * state.smoothedLineNudgeY
+    )
+  );
+  const angNudge = Math.max(
+    -PHYSICS.revealLineNudgeAngleMax,
+    Math.min(
+      PHYSICS.revealLineNudgeAngleMax,
+      PHYSICS.revealLineNudgeAngleK * state.smoothedLineNudgeY
+    )
+  );
+
+  const wobA = reduce ? 0 : PHYSICS.revealLineWobbleAmplitude;
+  const wob1 = wobA * Math.sin(PHYSICS.revealLineWobbleOmega * t);
+  const wob2 = reduce
+    ? 0
+    : PHYSICS.revealLineWobbleAmplitude * 0.28 * Math.sin(PHYSICS.revealLineWobbleOmega * 0.55 * t);
+  let angle = wob1 + wob2 + angNudge;
+  const maxA = PHYSICS.snappedLineRevealMaxAngle;
+  angle = Math.max(-maxA, Math.min(maxA, angle));
+
+  bar.cy = easeCy + nudgeY;
+  bar.cx = easeCx;
+  bar.angle = angle;
+  bar.vx = 0;
+  bar.vy = 0;
+  bar.angularVelocity = 0;
+}
+
 function updateSnappedTopLine(state, bottomBar) {
   const bar = state.snappedTopLine;
   if (!bar || bar.sleeping) {
     return;
   }
 
-  const sweeping = state.revealPhase === "sweeping";
   const revealActive = state.revealPhase !== "idle" && state.revealPhase !== "revealed";
-  const sweepG = PHYSICS.gravity + PHYSICS.revealSweepExtraGravity;
-  bar.vy += sweeping ? sweepG : PHYSICS.snappedLineGravity;
+
+  if (revealActive) {
+    updateSnappedTopLineKinematic(state, bar);
+    collideLettersWithSnappedLine(state, bar);
+    return;
+  }
+
+  // Fallback: Verlet line (e.g. if kinematic is ever bypassed with reveal off).
+  bar.vy += PHYSICS.snappedLineGravity;
   bar.vx *= PHYSICS.snappedLineDamping;
   bar.vy *= PHYSICS.snappedLineDamping;
   bar.angularVelocity *= PHYSICS.snappedLineDamping;
-  if (revealActive) {
-    bar.vx *= PHYSICS.snappedLineRevealLateralDamping;
-    bar.angularVelocity *= PHYSICS.snappedLineRevealSpinDamping;
-  }
   bar.cx += bar.vx;
   bar.cy += bar.vy;
   bar.angle += bar.angularVelocity;
-  constrainSnappedLineRevealRotation(bar, revealActive);
+  constrainSnappedLineRevealRotation(bar, false);
 
   collideLettersWithSnappedLine(state, bar);
 
@@ -1697,6 +1789,7 @@ function collideLettersWithSnappedLine(state, bar) {
   const nx = -dy;
   const ny = dx;
   const radius = PHYSICS.collisionRadius + bar.thickness / 2;
+  const revealActive = state.revealPhase !== "idle" && state.revealPhase !== "revealed";
 
   for (const scene of state.scenes) {
     for (const letter of scene.letters) {
@@ -1720,14 +1813,12 @@ function collideLettersWithSnappedLine(state, bar) {
       letter.y += ny * push;
       letter.px = letter.x;
       letter.py = letter.y;
-      // Equal-and-opposite to the depenetration: linear + torque (r×F) at the
-      // foot of the letter onto the bar, r = along * (dx,dy), F = -(nx,ny)·f.
-      const revealKinetic =
-        state.revealPhase === "unraveling" || state.revealPhase === "sweeping";
-      const lScale = revealKinetic ? PHYSICS.snappedLineGlyphReactionRevealLinearScale : 1;
-      const tScale = revealKinetic ? PHYSICS.snappedLineGlyphReactionRevealTorqueScale : 1;
-      const li = PHYSICS.snappedLineGlyphReactionLinear * lScale;
-      const ti = PHYSICS.snappedLineGlyphReactionTorque * tScale;
+      if (revealActive) {
+        continue;
+      }
+      // Reactions on the bar (kinematic reveal moves the line via tween only).
+      const li = PHYSICS.snappedLineGlyphReactionLinear;
+      const ti = PHYSICS.snappedLineGlyphReactionTorque;
       let dvx = -nx * push * li;
       let dvy = -ny * push * li;
       let domega = -along * push * ti;
