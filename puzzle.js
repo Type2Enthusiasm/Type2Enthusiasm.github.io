@@ -35,11 +35,33 @@ const PHYSICS = {
   // Initial per-glyph sag offset for data-puzzle-drop scenes.
   tailSagStep: 3.5,
   // Separator spring stiffness (higher = stronger pull back to rest).
-  separatorSpringK: 0.15,
+  separatorSpringK: 0.2,
   // Separator velocity damping (lower = settles faster).
-  separatorDamping: 0.85,
+  separatorDamping: 0.82,
   // Contribution of each unlocked glyph to separator "weight."
-  separatorGlyphMass: 0.08
+  separatorGlyphMass: 0.35,
+  // Ceiling spring stiffness (higher = more resistance).
+  ceilingSpringK: 0.2,
+  // Ceiling spring damping (lower = settles faster).
+  ceilingDamping: 0.82,
+  // Contribution of each contacting glyph to ceiling load.
+  ceilingGlyphMass: 0.35,
+  // Downward spring displacement (px) required to count as solved.
+  ceilingSolveDisplacement: 14,
+  // Consecutive simulation ticks above threshold before reveal.
+  ceilingSolveHoldTicks: 20,
+  // Invisible body thickness around each 1px line. Tunable after testing.
+  lineCollisionThickness: 6,
+  // Open-end clearance so words can route around line ends. Tunable after testing.
+  lineEndClearance: 9,
+  // Gravity applied to a snapped header line body.
+  snappedLineGravity: 0.18,
+  // Velocity retention for the snapped line body.
+  snappedLineDamping: 0.985,
+  // Converts off-center overload into initial angular velocity.
+  snappedLineTorqueScale: 0.0008,
+  // Below this linear/angular speed, the snapped line can sleep after landing.
+  snappedLineSleepVelocity: 0.08
 };
 
 const TEXT_STYLE_KEYS = [
@@ -69,6 +91,17 @@ const TEXT_STYLE_KEYS = [
   "opacity"
 ];
 
+const FAVORITE_QUOTES = [
+  "Everything should be made as simple as possible, but not simpler. - Albert Einstein",
+  "The man who moves a mountain begins by carrying away small stones. - Confucius",
+  "Chance favors the prepared mind. - Louis Pasteur",
+  "In the middle of difficulty lies opportunity. - Albert Einstein",
+  "We are what we repeatedly do. Excellence, then, is not an act but a habit. - Will Durant",
+  "What I cannot create, I do not understand. - Richard Feynman",
+  "First, solve the problem. Then, write the code. - John Johnson",
+  "All models are wrong, but some are useful. - George Box"
+];
+
 function boot() {
   const main = document.querySelector("main[data-puzzle-stage]");
   const trigger = document.querySelector("[data-puzzle-trigger]");
@@ -76,6 +109,10 @@ function boot() {
   const resetButton = document.querySelector("[data-puzzle-reset]");
   const walls = document.querySelector("[data-puzzle-walls]");
   const separator = document.querySelector("[data-puzzle-separator]");
+  const ceiling = document.querySelector("[data-puzzle-ceiling]");
+  const reward = document.querySelector("[data-puzzle-reward]");
+  const featuredQuote = document.querySelector("[data-puzzle-featured-quote]");
+  const quoteStack = document.querySelector("[data-puzzle-quote-stack]");
 
   if (!main || !trigger || !glyphLayer || !resetButton || !walls) {
     return;
@@ -88,6 +125,10 @@ function boot() {
     resetButton,
     walls,
     separator,
+    ceiling,
+    reward,
+    featuredQuote,
+    quoteStack,
     stage: "static",
     scenes: [],
     prepared: false,
@@ -97,12 +138,32 @@ function boot() {
     lastTime: -1,
     drags: new Map(),
     separatorDisplacement: 0,
-    separatorVelocity: 0
+    separatorVelocity: 0,
+    ceilingDisplacement: 0,
+    ceilingVelocity: 0,
+    ceilingSolveTicks: 0,
+    topLineSnapped: false,
+    snappedTopLine: null,
+    rewardUnlocked: false
   };
 
+  initRewardContent(state);
   bindEvents(state);
   installPointerDelegation(state);
   prepareWhenReady();
+}
+
+function initRewardContent(state) {
+  if (!state.reward || !state.featuredQuote || !state.quoteStack) {
+    return;
+  }
+  state.featuredQuote.textContent = FAVORITE_QUOTES[0];
+  state.quoteStack.textContent = "";
+  for (let i = 1; i < FAVORITE_QUOTES.length; i += 1) {
+    const item = document.createElement("li");
+    item.textContent = FAVORITE_QUOTES[i];
+    state.quoteStack.appendChild(item);
+  }
 }
 
 function bindEvents(state) {
@@ -146,6 +207,9 @@ async function activatePuzzle(state) {
   state.stage = "active";
   state.main.dataset.puzzleStage = "active";
   state.resetButton.hidden = false;
+  state.rewardUnlocked = false;
+  state.ceilingSolveTicks = 0;
+  hideReward(state);
 
   for (const el of state.walls.querySelectorAll("[data-puzzle-run]")) {
     el.dataset.puzzleHidden = "";
@@ -175,9 +239,23 @@ function resetPuzzle(state) {
   state.prepared = false;
   state.separatorDisplacement = 0;
   state.separatorVelocity = 0;
+  state.ceilingDisplacement = 0;
+  state.ceilingVelocity = 0;
+  state.ceilingSolveTicks = 0;
+  state.topLineSnapped = false;
+  state.snappedTopLine = null;
+  state.rewardUnlocked = false;
   if (state.separator) {
     state.separator.style.transform = "";
+    state.separator.classList.remove("is-compressing");
   }
+  if (state.ceiling) {
+    state.ceiling.style.removeProperty("--puzzle-ceiling-offset");
+    state.ceiling.style.removeProperty("--puzzle-ceiling-x-offset");
+    state.ceiling.style.removeProperty("--puzzle-ceiling-rotation");
+    state.ceiling.classList.remove("is-compressing");
+  }
+  hideReward(state);
 }
 
 function prepareScene(state) {
@@ -569,7 +647,9 @@ function tick(state, now) {
   // skip integration entirely. We still rAF to keep the loop responsive to clicks.
   const allSleeping = allScenesSleeping(state);
   const idleSeparator = Math.abs(state.separatorVelocity) < 0.01 && state.separatorDisplacement === 0;
-  if (allSleeping && state.drags.size === 0 && idleSeparator) {
+  const idleCeiling = Math.abs(state.ceilingVelocity) < 0.01 && state.ceilingDisplacement === 0;
+  const idleSnappedLine = !state.snappedTopLine || state.snappedTopLine.sleeping;
+  if (allSleeping && state.drags.size === 0 && idleSeparator && idleCeiling && idleSnappedLine) {
     state.accumulator = 0;
     state.rafId = requestAnimationFrame((time) => tick(state, time));
     return;
@@ -586,9 +666,7 @@ function tick(state, now) {
     syncScene(scene);
   }
 
-  if (state.separator) {
-    state.separator.style.transform = `translateY(${state.separatorDisplacement}px)`;
-  }
+  syncLineVisuals(state);
 
   state.rafId = requestAnimationFrame((time) => tick(state, time));
 }
@@ -613,6 +691,33 @@ function isSceneAtRest(scene) {
 function wakeScene(scene) {
   scene.sleeping = false;
   scene.idleTicks = 0;
+}
+
+function syncLineVisuals(state) {
+  if (state.separator) {
+    state.separator.style.transform = `translateY(${state.separatorDisplacement}px)`;
+    state.separator.classList.toggle("is-compressing", state.separatorDisplacement > 1);
+  }
+
+  if (!state.ceiling) {
+    return;
+  }
+
+  if (state.topLineSnapped && state.snappedTopLine) {
+    const attached = buildAttachedTopBar(state);
+    const xOffset = state.snappedTopLine.cx - attached.cx;
+    const yOffset = state.snappedTopLine.cy - attached.cy;
+    state.ceiling.style.setProperty("--puzzle-ceiling-x-offset", `${xOffset}px`);
+    state.ceiling.style.setProperty("--puzzle-ceiling-offset", `${yOffset}px`);
+    state.ceiling.style.setProperty("--puzzle-ceiling-rotation", `${state.snappedTopLine.angle}rad`);
+    state.ceiling.classList.add("is-compressing");
+    return;
+  }
+
+  state.ceiling.style.setProperty("--puzzle-ceiling-x-offset", "0px");
+  state.ceiling.style.setProperty("--puzzle-ceiling-offset", `${state.ceilingDisplacement}px`);
+  state.ceiling.style.setProperty("--puzzle-ceiling-rotation", "0rad");
+  state.ceiling.classList.toggle("is-compressing", state.ceilingDisplacement > 1);
 }
 
 // Drag-gated cascade unlock. Two complementary rules, applied symmetrically
@@ -679,15 +784,8 @@ function simulate(state) {
   state._tickCount = (state._tickCount || 0) + 1;
 
   const wallRect = state.walls.getBoundingClientRect();
-
-  // Floor = current top of the separator in viewport coordinates. Because the
-  // separator's CSS transform (translateY = state.separatorDisplacement) was
-  // applied at the end of last tick, getBoundingClientRect() already reflects
-  // that displacement; we do NOT add it again. Reading the rect every tick
-  // means window resizes and reflow naturally re-aim the floor.
-  const floorY = state.separator
-    ? state.separator.getBoundingClientRect().top
-    : window.innerHeight;
+  const topBar = state.topLineSnapped ? null : buildAttachedTopBar(state);
+  const bottomBar = buildAttachedBottomBar(state);
 
   // Per-tick aggregate: total loose letters across all scenes, and how many
   // scenes contribute any loose letter at all. Used to (a) adaptively drop
@@ -806,16 +904,16 @@ function simulate(state) {
       for (let index = 0; index < letters.length - 1; index += 1) {
         solveDistance(letters[index], letters[index + 1], restLengths[index], draggedIndexes.has(index), draggedIndexes.has(index + 1), lineHeight);
       }
-      constrainLetters(letters, lineHeight, wallRect, draggedIndexes, floorY);
-      applyDragPositionsForScene(state, scene, draggedIndexes);
+      constrainLetters(letters, lineHeight, wallRect, draggedIndexes, bottomBar, topBar);
+      applyDragPositionsForScene(state, scene, draggedIndexes, bottomBar, topBar);
     }
 
     // Single intra-scene collision pass per tick. We re-run walls and drag
     // afterwards so collision pushes can't violate either invariant.
     if (scene.hasFolded) {
       solveCollisionsInScene(letters, draggedIndexes, lineHeight);
-      constrainLetters(letters, lineHeight, wallRect, draggedIndexes, floorY);
-      applyDragPositionsForScene(state, scene, draggedIndexes);
+      constrainLetters(letters, lineHeight, wallRect, draggedIndexes, bottomBar, topBar);
+      applyDragPositionsForScene(state, scene, draggedIndexes, bottomBar, topBar);
     }
 
     // Bleed off "constraint-ghost velocity": shift px/py by (1 - keep) of the
@@ -861,34 +959,9 @@ function simulate(state) {
     }
   }
 
-  // Separator spring physics
-  // The separator is a real spring-loaded floor object: only letters that
-  // have actually landed on it (touching the floor AND nearly stationary)
-  // contribute weight. This ignores in-flight loose letters and prevents the
-  // "phantom load" where a chain mid-fall pre-compressed the line. letter.y
-  // is in viewport coords, and getBoundingClientRect().top already reflects
-  // the previous tick's transform, so it gives the floor's current viewport y.
-  if (state.separator) {
-    const currentFloorY = state.separator.getBoundingClientRect().top;
-    let load = 0;
-    const restThreshold = PHYSICS.sleepVelocity * 2;
-    for (const scene of state.scenes) {
-      for (const letter of scene.letters) {
-        if (letter.locked) continue;
-        if (letter.y + letter.h < currentFloorY - 0.5) continue;
-        const speed = Math.hypot(letter.x - letter.px, letter.y - letter.py);
-        if (speed < restThreshold) load++;
-      }
-    }
-    const weight = load * PHYSICS.separatorGlyphMass * PHYSICS.gravity;
-    const spring = -PHYSICS.separatorSpringK * state.separatorDisplacement;
-    state.separatorVelocity = (state.separatorVelocity + weight + spring) * PHYSICS.separatorDamping;
-    state.separatorDisplacement += state.separatorVelocity;
-    if (state.separatorDisplacement < 0) {
-      state.separatorDisplacement = 0;
-      state.separatorVelocity = 0;
-    }
-  }
+  updateBottomBarSpring(state, bottomBar);
+  updateTopBarSpringAndSnap(state, topBar);
+  updateSnappedTopLine(state, bottomBar);
 }
 
 function solveDistance(a, b, restLength, aDragged, bDragged, lineHeight) {
@@ -1021,45 +1094,337 @@ function solveCollisionsCross(state) {
   }
 }
 
-function constrainLetters(letters, lineHeight, wallRect, draggedIndexes, floorY) {
-  // letter.x / letter.y live in viewport coordinates (the glyph layer is
-  // position:fixed; inset:0, so transform translate places each glyph at
-  // viewport (letter.x, letter.y)). Walls are therefore the literal viewport
-  // edges, recomputed from window.innerWidth/innerHeight each tick so resize
-  // is automatic. Floor is the separator's current top edge, also viewport-y.
-  void wallRect; // wallRect kept on the signature for future use; not needed here
-  const minX = 0;
-  const minY = 0;
-  const maxX = window.innerWidth;
-  const maxY = floorY;
+function buildLineBody(kind, left, right, y) {
+  const width = Math.max(0, right - left);
+  const thickness = PHYSICS.lineCollisionThickness;
+  return {
+    kind,
+    left,
+    right,
+    width,
+    cx: left + width / 2,
+    cy: y,
+    top: y - thickness / 2,
+    bottom: y + thickness / 2,
+    thickness,
+    endClearance: PHYSICS.lineEndClearance
+  };
+}
 
-  for (let index = 0; index < letters.length; index += 1) {
-    const letter = letters[index];
-    if (letter.locked || draggedIndexes.has(index)) {
-      continue;
-    }
+function buildAttachedTopBar(state) {
+  const span = getPuzzleLineSpan(state);
+  const y = state.ceiling
+    ? state.ceiling.getBoundingClientRect().bottom + state.ceilingDisplacement
+    : 0;
+  return buildLineBody("top", span.left, span.right, y);
+}
 
-    if (letter.x < minX) {
-      letter.x = minX;
-      letter.px = letter.x + (letter.x - letter.px) * PHYSICS.bounce;
+function buildAttachedBottomBar(state) {
+  const rect = state.separator?.getBoundingClientRect();
+  if (!rect) {
+    return null;
+  }
+  return buildLineBody("bottom", rect.left, rect.right, rect.top);
+}
+
+function getTopFaceLoad(scenes, bar, requireResting) {
+  if (!bar) {
+    return { count: 0, centerX: bar?.cx || 0 };
+  }
+
+  let count = 0;
+  let weightedX = 0;
+  const restThreshold = PHYSICS.sleepVelocity * 2;
+  for (const scene of scenes) {
+    for (const letter of scene.letters) {
+      if (letter.locked || !overlapsBarFace(letter, bar)) {
+        continue;
+      }
+      if (Math.abs((letter.y + letter.h) - bar.top) > Math.max(1.5, bar.thickness / 2)) {
+        continue;
+      }
+      if (requireResting) {
+        const speed = Math.hypot(letter.x - letter.px, letter.y - letter.py);
+        if (speed > restThreshold) {
+          continue;
+        }
+      }
+      count++;
+      weightedX += letter.x + letter.w / 2;
     }
-    if (letter.x + letter.w > maxX) {
-      letter.x = maxX - letter.w;
-      letter.px = letter.x + (letter.x - letter.px) * PHYSICS.bounce;
+  }
+
+  return {
+    count,
+    centerX: count ? weightedX / count : bar.cx
+  };
+}
+
+function updateBottomBarSpring(state, bottomBar) {
+  if (!bottomBar) {
+    return;
+  }
+
+  const load = getTopFaceLoad(state.scenes, bottomBar, false);
+  const weight = load.count * PHYSICS.separatorGlyphMass * PHYSICS.gravity;
+  const spring = -PHYSICS.separatorSpringK * state.separatorDisplacement;
+  state.separatorVelocity = (state.separatorVelocity + weight + spring) * PHYSICS.separatorDamping;
+  state.separatorDisplacement += state.separatorVelocity;
+  if (state.separatorDisplacement < 0) {
+    state.separatorDisplacement = 0;
+    state.separatorVelocity = 0;
+  }
+}
+
+function updateTopBarSpringAndSnap(state, topBar) {
+  if (!topBar || state.topLineSnapped) {
+    return;
+  }
+
+  const load = getTopFaceLoad(state.scenes, topBar, false);
+  const weight = load.count * PHYSICS.ceilingGlyphMass * PHYSICS.gravity;
+  const spring = -PHYSICS.ceilingSpringK * state.ceilingDisplacement;
+  state.ceilingVelocity = (state.ceilingVelocity + weight + spring) * PHYSICS.ceilingDamping;
+  state.ceilingDisplacement += state.ceilingVelocity;
+  if (state.ceilingDisplacement < 0) {
+    state.ceilingDisplacement = 0;
+    state.ceilingVelocity = 0;
+  }
+
+  if (state.ceilingDisplacement >= PHYSICS.ceilingSolveDisplacement) {
+    state.ceilingSolveTicks += 1;
+  } else {
+    state.ceilingSolveTicks = Math.max(0, state.ceilingSolveTicks - 2);
+  }
+
+  if (state.ceilingSolveTicks >= PHYSICS.ceilingSolveHoldTicks) {
+    snapTopLine(state, topBar, load.centerX);
+  }
+}
+
+function snapTopLine(state, topBar, loadCenterX) {
+  if (state.topLineSnapped) {
+    return;
+  }
+
+  const offCenter = loadCenterX - topBar.cx;
+  const angularVelocity = Math.max(
+    -0.045,
+    Math.min(0.045, offCenter * PHYSICS.snappedLineTorqueScale)
+  ) || 0.014;
+
+  state.topLineSnapped = true;
+  state.snappedTopLine = {
+    cx: topBar.cx,
+    cy: topBar.cy,
+    width: topBar.width,
+    thickness: topBar.thickness,
+    angle: 0,
+    vx: 0,
+    vy: Math.max(0.5, state.ceilingVelocity),
+    angularVelocity,
+    sleeping: false
+  };
+  state.ceilingDisplacement = 0;
+  state.ceilingVelocity = 0;
+  unlockReward(state);
+}
+
+function updateSnappedTopLine(state, bottomBar) {
+  const bar = state.snappedTopLine;
+  if (!bar || bar.sleeping) {
+    return;
+  }
+
+  bar.vy += PHYSICS.snappedLineGravity;
+  bar.vx *= PHYSICS.snappedLineDamping;
+  bar.vy *= PHYSICS.snappedLineDamping;
+  bar.angularVelocity *= PHYSICS.snappedLineDamping;
+  bar.cx += bar.vx;
+  bar.cy += bar.vy;
+  bar.angle += bar.angularVelocity;
+
+  collideLettersWithSnappedLine(state, bar);
+
+  if (bottomBar && snappedLineOverlapsBar(bar, bottomBar)) {
+    const bottom = snappedLineBottom(bar);
+    const penetration = bottom - bottomBar.top;
+    if (penetration > 0) {
+      bar.cy -= penetration;
+      bar.vy *= -0.22;
+      bar.angularVelocity *= 0.65;
     }
-    if (letter.y < minY) {
-      letter.y = minY;
-      letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
-    }
-    if (letter.y + lineHeight > maxY) {
-      letter.y = maxY - lineHeight;
-      letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
+  }
+
+  if (
+    Math.abs(bar.vy) < PHYSICS.snappedLineSleepVelocity &&
+    Math.abs(bar.angularVelocity) < PHYSICS.snappedLineSleepVelocity * 0.03 &&
+    (bar.cy > window.innerHeight + 80 || (bottomBar && snappedLineBottom(bar) >= bottomBar.top - 0.5))
+  ) {
+    bar.sleeping = true;
+    bar.vx = 0;
+    bar.vy = 0;
+    bar.angularVelocity = 0;
+  }
+}
+
+function snappedLineBottom(bar) {
+  const halfW = bar.width / 2;
+  return Math.max(
+    bar.cy + Math.sin(bar.angle) * halfW,
+    bar.cy - Math.sin(bar.angle) * halfW
+  ) + bar.thickness / 2;
+}
+
+function snappedLineOverlapsBar(line, bar) {
+  const halfW = line.width / 2;
+  const left = Math.min(
+    line.cx - Math.cos(line.angle) * halfW,
+    line.cx + Math.cos(line.angle) * halfW
+  );
+  const right = Math.max(
+    line.cx - Math.cos(line.angle) * halfW,
+    line.cx + Math.cos(line.angle) * halfW
+  );
+  return right > bar.left + bar.endClearance && left < bar.right - bar.endClearance;
+}
+
+function collideLettersWithSnappedLine(state, bar) {
+  const halfW = bar.width / 2;
+  const dx = Math.cos(bar.angle);
+  const dy = Math.sin(bar.angle);
+  const nx = -dy;
+  const ny = dx;
+  const radius = PHYSICS.collisionRadius + bar.thickness / 2;
+
+  for (const scene of state.scenes) {
+    for (const letter of scene.letters) {
+      if (letter.locked) {
+        continue;
+      }
+      const cx = letter.x + letter.w / 2;
+      const cy = letter.y + letter.h / 2;
+      const relX = cx - bar.cx;
+      const relY = cy - bar.cy;
+      const along = relX * dx + relY * dy;
+      if (along < -halfW + PHYSICS.lineEndClearance || along > halfW - PHYSICS.lineEndClearance) {
+        continue;
+      }
+      const dist = relX * nx + relY * ny;
+      if (Math.abs(dist) >= radius) {
+        continue;
+      }
+      const push = (radius - Math.abs(dist)) * (dist < 0 ? -1 : 1);
+      letter.x += nx * push;
+      letter.y += ny * push;
+      letter.px = letter.x;
+      letter.py = letter.y;
     }
   }
 }
 
-function applyDragPositionsForScene(state, scene, draggedIndexes) {
+function constrainLetters(letters, lineHeight, wallRect, draggedIndexes, floorLine, ceilingLine) {
+  // letter.x / letter.y live in viewport coordinates (the glyph layer is
+  // position:fixed; inset:0, so transform translate places each glyph at
+  // viewport (letter.x, letter.y)). Walls are therefore the literal viewport
+  // edges, recomputed from window.innerWidth/innerHeight each tick so resize
+  // is automatic. The visible top/bottom lines are finite spring objects.
+  void wallRect; // wallRect kept on the signature for future use; not needed here
+  void draggedIndexes; // Dragged letters are constrained after pointer placement too.
+  const minX = 0;
+  const minY = 0;
+  const maxX = window.innerWidth;
+  const maxY = window.innerHeight;
+
+  for (let index = 0; index < letters.length; index += 1) {
+    const letter = letters[index];
+    if (letter.locked) {
+      continue;
+    }
+    constrainLetter(letter, lineHeight, minX, minY, maxX, maxY, floorLine, ceilingLine);
+  }
+}
+
+function constrainLetter(letter, lineHeight, minX, minY, maxX, maxY, floorLine, ceilingLine, prevX = letter.px, prevY = letter.py) {
+  if (letter.x < minX) {
+    letter.x = minX;
+    letter.px = letter.x + (letter.x - letter.px) * PHYSICS.bounce;
+  }
+  if (letter.x + letter.w > maxX) {
+    letter.x = maxX - letter.w;
+    letter.px = letter.x + (letter.x - letter.px) * PHYSICS.bounce;
+  }
+  if (letter.y < minY) {
+    letter.y = minY;
+    letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
+  }
+  if (letter.y + lineHeight > maxY) {
+    letter.y = maxY - lineHeight;
+    letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
+  }
+  constrainLetterAgainstBar(letter, lineHeight, ceilingLine, prevX, prevY);
+  constrainLetterAgainstBar(letter, lineHeight, floorLine, prevX, prevY);
+}
+
+function constrainLetterAgainstBar(letter, lineHeight, bar, prevX, prevY) {
+  if (!bar || !overlapsBarFace(letter, bar)) {
+    return;
+  }
+
+  const prevTop = prevY;
+  const prevBottom = prevY + lineHeight;
+  const currentTop = letter.y;
+  const currentBottom = letter.y + lineHeight;
+
+  if (overlapsBarFaceAt(prevX, letter.w, bar) && prevBottom <= bar.top && currentBottom > bar.top) {
+    letter.y = bar.top - lineHeight;
+    letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
+    return;
+  }
+  if (overlapsBarFaceAt(prevX, letter.w, bar) && prevTop >= bar.bottom && currentTop < bar.bottom) {
+    letter.y = bar.bottom;
+    letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
+    return;
+  }
+
+  if (currentTop < bar.bottom && currentBottom > bar.top) {
+    const overlapFromTop = currentBottom - bar.top;
+    const overlapFromBottom = bar.bottom - currentTop;
+    if (overlapFromTop <= overlapFromBottom) {
+      letter.y = bar.top - lineHeight;
+    } else {
+      letter.y = bar.bottom;
+    }
+    letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
+  }
+}
+
+function overlapsBarFace(letter, bar) {
+  return overlapsBarFaceAt(letter.x, letter.w, bar);
+}
+
+function overlapsBarFaceAt(x, width, bar) {
+  return x + width > bar.left + bar.endClearance && x < bar.right - bar.endClearance;
+}
+
+function getPuzzleLineSpan(state) {
+  const separatorRect = state.separator?.getBoundingClientRect();
+  if (separatorRect) {
+    return { left: separatorRect.left, right: separatorRect.right };
+  }
+
+  const containerWidth = parseCssPxNumber(getComputedStyle(document.documentElement).getPropertyValue("--container")) || window.innerWidth;
+  const width = Math.min(window.innerWidth, containerWidth);
+  const left = (window.innerWidth - width) / 2;
+  return { left, right: left + width };
+}
+
+function applyDragPositionsForScene(state, scene, draggedIndexes, floorLine, ceilingLine) {
   const rect = state.glyphLayer.getBoundingClientRect();
+  const minX = 0;
+  const minY = 0;
+  const maxX = window.innerWidth;
+  const maxY = window.innerHeight;
   for (const [pointerId, drag] of state.drags.entries()) {
     if (drag.scene !== scene) {
       continue;
@@ -1084,11 +1449,14 @@ function applyDragPositionsForScene(state, scene, draggedIndexes) {
         draggedIndexes.add(drag.letterIdx);
       }
     }
+    const prevX = letter.x;
+    const prevY = letter.y;
     letter.x = drag.clientX - rect.left - drag.offsetX;
     letter.y = drag.clientY - rect.top - drag.offsetY;
+    letter.locked = false;
+    constrainLetter(letter, scene.lineHeight, minX, minY, maxX, maxY, floorLine, ceilingLine, prevX, prevY);
     letter.px = letter.x;
     letter.py = letter.y;
-    letter.locked = false;
     setLetterInteractive(letter, true);
   }
 }
@@ -1098,6 +1466,23 @@ function syncScene(scene) {
     setLetterInteractive(letter, true);
     letter.el.style.transform = `translate(${letter.x}px, ${letter.y}px)`;
   }
+}
+
+function unlockReward(state) {
+  state.rewardUnlocked = true;
+  if (!state.reward) {
+    return;
+  }
+  state.reward.hidden = false;
+  state.reward.dataset.puzzleRevealed = "true";
+}
+
+function hideReward(state) {
+  if (!state.reward) {
+    return;
+  }
+  state.reward.hidden = true;
+  delete state.reward.dataset.puzzleRevealed;
 }
 
 function clearDrags(state) {

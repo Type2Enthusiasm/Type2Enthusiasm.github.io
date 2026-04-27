@@ -13,3 +13,7 @@ __pycache__/
 # env
 .env
 CLAUDE.md
+.agents/
+.cursor/
+.claude/
+
