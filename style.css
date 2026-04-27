@@ -35,6 +35,11 @@
 /* ===== Reset-ish & base ===== */
 *{ box-sizing:border-box }
 html{ scroll-behavior:smooth; -webkit-text-size-adjust:100% }
+html.puzzle-scroll-lock{
+  overflow:hidden;
+  overscroll-behavior:none;
+}
+
 body{
   margin:0;
   min-height:100vh;
@@ -49,6 +54,11 @@ body{
   font-feature-settings: "liga" 1, "kern" 1; /* no discretionary ligatures */
 }
 
+body.puzzle-scroll-lock{
+  overflow:hidden;
+  overscroll-behavior:none;
+}
+
 /* ===== Containers ===== */
 .container{ max-width:var(--container); margin:0 auto; padding:0 1rem; }
 
@@ -57,7 +67,9 @@ body{
   --puzzle-ceiling-offset:0px;
   --puzzle-ceiling-x-offset:0px;
   --puzzle-ceiling-rotation:0rad;
+  --puzzle-ceiling-opacity:1;
   position:relative;
+  z-index:34;
   padding:2.5rem 0 1rem; 
   border-bottom:0;
 }
@@ -70,9 +82,12 @@ body{
   width:min(100%, var(--container));
   height:1px;
   background:var(--hairline);
+  opacity:var(--puzzle-ceiling-opacity);
   transform:translate(calc(-50% + var(--puzzle-ceiling-x-offset)), var(--puzzle-ceiling-offset)) rotate(var(--puzzle-ceiling-rotation));
+  z-index:34;
+  pointer-events:none;
   will-change:transform;
-  transition:background-color 180ms cubic-bezier(0.25, 1, 0.5, 1);
+  transition:opacity 220ms cubic-bezier(0.25, 1, 0.5, 1), background-color 180ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .header-row{
@@ -152,6 +167,11 @@ main{ font-feature-settings: "liga" 1, "kern" 0; }
   width:100%;
   flex:1 0 auto;
   padding:1.25rem 0 3rem;
+}
+
+[data-puzzle-walls][data-puzzle-reveal-layout="locked"]{
+  min-height:var(--puzzle-reveal-min-height);
+  transition:min-height 620ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 /* Ezhil-like heading sizes with thin weight */
@@ -238,7 +258,7 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
 }
 
 .puzzle-reward{
-  margin:1.5rem auto .75rem;
+  margin:1.5rem 0 .75rem;
   padding:1.1rem 1rem 1.1rem;
   border:1px solid color-mix(in oklab, var(--hairline) 85%, var(--accent));
   border-radius:var(--radius);
@@ -252,6 +272,10 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
 .puzzle-reward[data-puzzle-revealed="true"]{
   opacity:1;
   transform:translateY(0);
+}
+
+.puzzle-reward[hidden]{
+  display:none !important;
 }
 
 .puzzle-reward-kicker{
@@ -293,6 +317,7 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
   .site-header,
   .site-header::after,
   .puzzle-separator,
+  [data-puzzle-walls][data-puzzle-reveal-layout="locked"],
   .puzzle-reward{
     transition:none;
   }
@@ -464,6 +489,10 @@ footer{
 
 [data-puzzle-hidden]{
   visibility:hidden;
+}
+
+[data-puzzle-stage="revealed"] [data-puzzle-hidden]{
+  display:none;
 }
 
 [data-puzzle-hidden] *{

@@ -61,7 +61,34 @@ const PHYSICS = {
   // Converts off-center overload into initial angular velocity.
   snappedLineTorqueScale: 0.0008,
   // Below this linear/angular speed, the snapped line can sleep after landing.
-  snappedLineSleepVelocity: 0.08
+  snappedLineSleepVelocity: 0.08,
+  // Reveal: calmer than full rigid-body, but still damped and angle-limited.
+  snappedLineRevealAngularDamping: 0.68,
+  snappedLineRevealMaxAngle: 0.36,
+  // Extra damping on horizontal spin only during reveal (keeps a smooth fall).
+  snappedLineRevealLateralDamping: 0.92,
+  snappedLineRevealSpinDamping: 0.9,
+  // When glyphs depenetrate the snapped line, push the bar back (reaction) so
+  // the line does not look weightless.
+  snappedLineGlyphReactionLinear: 0.014,
+  snappedLineGlyphReactionTorque: 0.00045,
+  snappedLineGlyphReactionMaxDV: 0.12,
+  snappedLineGlyphReactionMaxDomega: 0.02,
+  // Weaker reactions while the line is in the long reveal (less wiggle, still responsive).
+  snappedLineGlyphReactionRevealLinearScale: 0.5,
+  snappedLineGlyphReactionRevealTorqueScale: 0.38,
+  // Added to `gravity` for letters/line while sweeping (keeps a brisk exit).
+  revealSweepExtraGravity: 0.1,
+  // Minimum ticks the reveal stays in the unwind phase once it starts.
+  revealUnravelMinTicks: 150,
+  // Delay opacity fade so the falling glyphs and line are visible first.
+  revealSweepFadeStartTicks: 240,
+  // Minimum ticks spent sweeping before quotes can fade in.
+  revealSweepMinTicks: 420,
+  // Fallback ticks before revealing even if a long chain is still visible.
+  revealSweepMaxTicks: 720,
+  // How far below the viewport glyphs should be before the reward appears.
+  revealOffscreenMargin: 36
 };
 
 const TEXT_STYLE_KEYS = [
@@ -144,6 +171,11 @@ function boot() {
     ceilingSolveTicks: 0,
     topLineSnapped: false,
     snappedTopLine: null,
+    revealPhase: "idle",
+    revealTicks: 0,
+    revealScrollLocked: false,
+    revealScrollY: 0,
+    revealLayoutTimer: 0,
     rewardUnlocked: false
   };
 
@@ -179,16 +211,9 @@ function bindEvents(state) {
 
   window.addEventListener("keydown", (e) => {
     if ((e.key === "f" || e.key === "F") && state.stage === "active") {
-      for (const scene of state.scenes) {
-        wakeScene(scene);
-        if (!scene.unraveling) {
-          scene.unraveling = true;
-          scene.unravelIdx = scene.letters.length - 1;
-          while (scene.unravelIdx >= 0 && !scene.letters[scene.unravelIdx].locked) {
-            scene.unravelIdx--;
-          }
-        }
-      }
+      startUnravelAllScenes(state);
+    } else if (e.key === "~" && state.stage === "active") {
+      forcePuzzleReveal(state);
     }
   });
 
@@ -244,6 +269,11 @@ function resetPuzzle(state) {
   state.ceilingSolveTicks = 0;
   state.topLineSnapped = false;
   state.snappedTopLine = null;
+  state.revealPhase = "idle";
+  state.revealTicks = 0;
+  unlockRevealScroll(state);
+  state.revealScrollY = 0;
+  clearRevealLayout(state);
   state.rewardUnlocked = false;
   if (state.separator) {
     state.separator.style.transform = "";
@@ -253,6 +283,7 @@ function resetPuzzle(state) {
     state.ceiling.style.removeProperty("--puzzle-ceiling-offset");
     state.ceiling.style.removeProperty("--puzzle-ceiling-x-offset");
     state.ceiling.style.removeProperty("--puzzle-ceiling-rotation");
+    state.ceiling.style.removeProperty("--puzzle-ceiling-opacity");
     state.ceiling.classList.remove("is-compressing");
   }
   hideReward(state);
@@ -294,7 +325,7 @@ function prepareScene(state) {
 }
 
 function refreshScene(state) {
-  if (state.stage !== "active") {
+  if (state.stage !== "active" || state.revealPhase !== "idle") {
     return;
   }
   prepareScene(state);
@@ -649,7 +680,8 @@ function tick(state, now) {
   const idleSeparator = Math.abs(state.separatorVelocity) < 0.01 && state.separatorDisplacement === 0;
   const idleCeiling = Math.abs(state.ceilingVelocity) < 0.01 && state.ceilingDisplacement === 0;
   const idleSnappedLine = !state.snappedTopLine || state.snappedTopLine.sleeping;
-  if (allSleeping && state.drags.size === 0 && idleSeparator && idleCeiling && idleSnappedLine) {
+  const idleReveal = state.revealPhase === "idle" || state.revealPhase === "revealed";
+  if (allSleeping && state.drags.size === 0 && idleSeparator && idleCeiling && idleSnappedLine && idleReveal) {
     state.accumulator = 0;
     state.rafId = requestAnimationFrame((time) => tick(state, time));
     return;
@@ -691,6 +723,20 @@ function isSceneAtRest(scene) {
 function wakeScene(scene) {
   scene.sleeping = false;
   scene.idleTicks = 0;
+}
+
+function startUnravelAllScenes(state) {
+  for (const scene of state.scenes) {
+    wakeScene(scene);
+    if (scene.unraveling) {
+      continue;
+    }
+    scene.unraveling = true;
+    scene.unravelIdx = scene.letters.length - 1;
+    while (scene.unravelIdx >= 0 && !scene.letters[scene.unravelIdx].locked) {
+      scene.unravelIdx--;
+    }
+  }
 }
 
 function syncLineVisuals(state) {
@@ -786,6 +832,17 @@ function simulate(state) {
   const wallRect = state.walls.getBoundingClientRect();
   const topBar = state.topLineSnapped ? null : buildAttachedTopBar(state);
   const bottomBar = buildAttachedBottomBar(state);
+  const sweepingReveal = state.revealPhase === "sweeping";
+  const revealedPhase = state.revealPhase === "revealed";
+  const revealKinetic =
+    state.revealPhase === "unraveling" || state.revealPhase === "sweeping";
+  // Only skip walls once the reward path has teleported glyphs off (revealed).
+  // During unravel + sweep: letters still collide with the separator (bottom
+  // line) but not the viewport bottom edge, so they can fall off-screen.
+  const clearedReveal = revealedPhase;
+  const collisionTopBar = sweepingReveal ? null : topBar;
+  const collisionBottomBar = bottomBar;
+  const allowFallThroughViewportBottom = revealKinetic;
 
   // Per-tick aggregate: total loose letters across all scenes, and how many
   // scenes contribute any loose letter at all. Used to (a) adaptively drop
@@ -822,7 +879,7 @@ function simulate(state) {
     }
 
     // Skip the entire physics block for sleeping scenes with no input.
-    if (scene.sleeping && !hasDrag && !scene.unraveling) {
+    if (scene.sleeping && !hasDrag && !scene.unraveling && !revealKinetic) {
       continue;
     }
 
@@ -867,8 +924,12 @@ function simulate(state) {
       const vy = (letter.y - letter.py) * PHYSICS.damping;
       letter.px = letter.x;
       letter.py = letter.y;
+      const g =
+        state.revealPhase === "sweeping"
+          ? PHYSICS.gravity + PHYSICS.revealSweepExtraGravity
+          : PHYSICS.gravity;
       letter.x += vx;
-      letter.y += vy + PHYSICS.gravity;
+      letter.y += vy + g;
     }
 
     // Detect "folded" state once the chain has dropped enough to overlap itself.
@@ -904,16 +965,50 @@ function simulate(state) {
       for (let index = 0; index < letters.length - 1; index += 1) {
         solveDistance(letters[index], letters[index + 1], restLengths[index], draggedIndexes.has(index), draggedIndexes.has(index + 1), lineHeight);
       }
-      constrainLetters(letters, lineHeight, wallRect, draggedIndexes, bottomBar, topBar);
-      applyDragPositionsForScene(state, scene, draggedIndexes, bottomBar, topBar);
+      if (!clearedReveal) {
+        constrainLetters(
+          letters,
+          lineHeight,
+          wallRect,
+          draggedIndexes,
+          collisionBottomBar,
+          collisionTopBar,
+          allowFallThroughViewportBottom
+        );
+        applyDragPositionsForScene(
+          state,
+          scene,
+          draggedIndexes,
+          collisionBottomBar,
+          collisionTopBar,
+          allowFallThroughViewportBottom
+        );
+      }
     }
 
     // Single intra-scene collision pass per tick. We re-run walls and drag
     // afterwards so collision pushes can't violate either invariant.
     if (scene.hasFolded) {
       solveCollisionsInScene(letters, draggedIndexes, lineHeight);
-      constrainLetters(letters, lineHeight, wallRect, draggedIndexes, bottomBar, topBar);
-      applyDragPositionsForScene(state, scene, draggedIndexes, bottomBar, topBar);
+      if (!clearedReveal) {
+        constrainLetters(
+          letters,
+          lineHeight,
+          wallRect,
+          draggedIndexes,
+          collisionBottomBar,
+          collisionTopBar,
+          allowFallThroughViewportBottom
+        );
+        applyDragPositionsForScene(
+          state,
+          scene,
+          draggedIndexes,
+          collisionBottomBar,
+          collisionTopBar,
+          allowFallThroughViewportBottom
+        );
+      }
     }
 
     // Bleed off "constraint-ghost velocity": shift px/py by (1 - keep) of the
@@ -962,6 +1057,7 @@ function simulate(state) {
   updateBottomBarSpring(state, bottomBar);
   updateTopBarSpringAndSnap(state, topBar);
   updateSnappedTopLine(state, bottomBar);
+  updateRevealSequence(state);
 }
 
 function solveDistance(a, b, restLength, aDragged, bDragged, lineHeight) {
@@ -1202,16 +1298,33 @@ function updateTopBarSpringAndSnap(state, topBar) {
   }
 }
 
+function forcePuzzleReveal(state) {
+  if (state.rewardUnlocked || state.revealPhase !== "idle") {
+    return;
+  }
+
+  if (!state.topLineSnapped) {
+    const topBar = buildAttachedTopBar(state);
+    snapTopLine(state, topBar, getRevealLoadCenterX(state, topBar));
+    return;
+  }
+
+  startRevealSequence(state);
+}
+
 function snapTopLine(state, topBar, loadCenterX) {
   if (state.topLineSnapped) {
     return;
   }
 
   const offCenter = loadCenterX - topBar.cx;
+  const normalizedLoad = Math.max(-1, Math.min(1, offCenter / Math.max(1, topBar.width / 2)));
+  const loadDirection = normalizedLoad === 0 ? 1 : Math.sign(normalizedLoad);
+  const lateralVelocity = normalizedLoad * 0.7 + loadDirection * 0.18;
   const angularVelocity = Math.max(
-    -0.045,
-    Math.min(0.045, offCenter * PHYSICS.snappedLineTorqueScale)
-  ) || 0.014;
+    -0.075,
+    Math.min(0.075, offCenter * PHYSICS.snappedLineTorqueScale + loadDirection * 0.018)
+  );
 
   state.topLineSnapped = true;
   state.snappedTopLine = {
@@ -1220,14 +1333,270 @@ function snapTopLine(state, topBar, loadCenterX) {
     width: topBar.width,
     thickness: topBar.thickness,
     angle: 0,
-    vx: 0,
+    vx: lateralVelocity,
     vy: Math.max(0.5, state.ceilingVelocity),
     angularVelocity,
     sleeping: false
   };
   state.ceilingDisplacement = 0;
   state.ceilingVelocity = 0;
+  startRevealSequence(state);
+}
+
+function getRevealLoadCenterX(state, topBar) {
+  let total = 0;
+  let count = 0;
+  for (const scene of state.scenes) {
+    for (const letter of scene.letters) {
+      if (letter.locked) {
+        continue;
+      }
+      total += letter.x + letter.w / 2;
+      count += 1;
+    }
+  }
+  if (count > 0) {
+    return total / count;
+  }
+  return topBar.cx + topBar.width * 0.18;
+}
+
+function startRevealSequence(state) {
+  clearDrags(state);
+  lockRevealLayout(state);
+  lockRevealScroll(state);
+  state.revealPhase = "unraveling";
+  state.revealTicks = 0;
+  startUnravelAllScenes(state);
+}
+
+function updateRevealSequence(state) {
+  if (state.revealPhase === "idle" || state.revealPhase === "revealed") {
+    return;
+  }
+
+  state.revealTicks += 1;
+  maintainRevealScrollLock(state);
+
+  if (state.revealPhase === "unraveling") {
+    if (allScenesFullyUnraveled(state) && state.revealTicks >= PHYSICS.revealUnravelMinTicks) {
+      state.revealPhase = "sweeping";
+      state.revealTicks = 0;
+      clearDrags(state);
+    }
+    return;
+  }
+
+  applyRevealSweepForces(state);
+  const sweptLongEnough = state.revealTicks >= PHYSICS.revealSweepMinTicks;
+  const sweptTooLong = state.revealTicks >= PHYSICS.revealSweepMaxTicks;
+  if ((sweptLongEnough && allRevealObjectsOffscreen(state)) || sweptTooLong) {
+    moveUnlockedGlyphsOffscreen(state);
+    finishReveal(state);
+  }
+}
+
+function allScenesFullyUnraveled(state) {
+  for (const scene of state.scenes) {
+    if (scene.unraveling) {
+      return false;
+    }
+    for (const letter of scene.letters) {
+      if (letter.locked) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function applyRevealSweepForces(state) {
+  for (const scene of state.scenes) {
+    scene.sleeping = false;
+    scene.idleTicks = 0;
+    for (const letter of scene.letters) {
+      if (letter.locked) {
+        continue;
+      }
+      letter.el.style.opacity = String(getRevealSweepOpacity(state));
+      setLetterInteractive(letter, false);
+    }
+  }
+
+  if (state.snappedTopLine) {
+    state.snappedTopLine.sleeping = false;
+    if (state.ceiling) {
+      state.ceiling.style.setProperty("--puzzle-ceiling-opacity", String(getRevealSweepOpacity(state)));
+    }
+  }
+}
+
+function getRevealSweepOpacity(state) {
+  const sweepMinTicks = PHYSICS.revealSweepMinTicks;
+  const fadeStartTicks = PHYSICS.revealSweepFadeStartTicks;
+  const fadeTicks = Math.max(1, sweepMinTicks - fadeStartTicks);
+  const progress = Math.max(
+    0,
+    Math.min(1, (state.revealTicks - fadeStartTicks) / fadeTicks)
+  );
+  return Math.max(0, 1 - progress);
+}
+
+function allRevealObjectsOffscreen(state) {
+  const threshold = window.innerHeight + PHYSICS.revealOffscreenMargin;
+  for (const scene of state.scenes) {
+    for (const letter of scene.letters) {
+      if (!letter.locked && letter.y < threshold) {
+        return false;
+      }
+    }
+  }
+  return !state.snappedTopLine || state.snappedTopLine.cy > threshold;
+}
+
+function unlockAllScenesNow(state) {
+  for (const scene of state.scenes) {
+    wakeScene(scene);
+    scene.unraveling = false;
+    scene.unravelIdx = -1;
+    for (const letter of scene.letters) {
+      letter.locked = false;
+      setLetterInteractive(letter, false);
+    }
+  }
+}
+
+function moveUnlockedGlyphsOffscreen(state) {
+  const y = window.innerHeight + PHYSICS.revealOffscreenMargin + 20;
+  for (const scene of state.scenes) {
+    scene.sleeping = true;
+    scene.idleTicks = PHYSICS.sleepFrames + 1;
+    for (const letter of scene.letters) {
+      if (letter.locked) {
+        continue;
+      }
+      letter.y = y;
+      letter.py = y;
+      letter.el.style.opacity = "0";
+      setLetterInteractive(letter, false);
+    }
+  }
+  if (state.snappedTopLine) {
+    state.snappedTopLine.cy = y;
+    state.snappedTopLine.vy = 0;
+    state.snappedTopLine.angularVelocity = 0;
+    state.snappedTopLine.sleeping = true;
+  }
+  if (state.ceiling) {
+    state.ceiling.style.setProperty("--puzzle-ceiling-opacity", "0");
+  }
+  if (state.glyphLayer) {
+    state.glyphLayer.hidden = true;
+  }
+}
+
+function finishReveal(state) {
+  state.revealPhase = "revealed";
+  state.revealTicks = 0;
+  const restoreY = unlockRevealScroll(state);
+  if (state.main) {
+    state.main.dataset.puzzleStage = "revealed";
+  }
   unlockReward(state);
+  settleRevealLayout(state);
+  scrollRewardIntoView(state, restoreY);
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+}
+
+function lockRevealScroll(state) {
+  if (state.revealScrollLocked) {
+    return;
+  }
+
+  state.revealScrollY = window.scrollY;
+  state.revealScrollLocked = true;
+  document.documentElement.classList.add("puzzle-scroll-lock");
+  document.body.classList.add("puzzle-scroll-lock");
+}
+
+function maintainRevealScrollLock(state) {
+  if (!state.revealScrollLocked) {
+    return;
+  }
+  window.scrollTo(0, state.revealScrollY);
+}
+
+function unlockRevealScroll(state) {
+  if (!state.revealScrollLocked) {
+    return window.scrollY;
+  }
+
+  const restoreY = state.revealScrollY;
+  state.revealScrollLocked = false;
+  document.documentElement.classList.remove("puzzle-scroll-lock");
+  document.body.classList.remove("puzzle-scroll-lock");
+  window.scrollTo(0, restoreY);
+  return restoreY;
+}
+
+function scrollRewardIntoView(state, fallbackY) {
+  if (!state.reward) {
+    window.scrollTo(0, fallbackY || 0);
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    const top = state.reward.getBoundingClientRect().top + window.scrollY - 96;
+    window.scrollTo({
+      top: Math.max(0, top),
+      behavior: prefersReducedMotion() ? "auto" : "smooth"
+    });
+  });
+}
+
+function lockRevealLayout(state) {
+  if (!state.walls) {
+    return;
+  }
+
+  if (state.revealLayoutTimer) {
+    window.clearTimeout(state.revealLayoutTimer);
+    state.revealLayoutTimer = 0;
+  }
+
+  const height = Math.ceil(state.walls.getBoundingClientRect().height);
+  state.walls.style.setProperty("--puzzle-reveal-min-height", `${height}px`);
+  state.walls.dataset.puzzleRevealLayout = "locked";
+}
+
+function settleRevealLayout(state) {
+  if (!state.walls || !state.reward) {
+    clearRevealLayout(state);
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    const height = Math.ceil(state.reward.getBoundingClientRect().height + 32);
+    state.walls.style.setProperty("--puzzle-reveal-min-height", `${height}px`);
+    state.revealLayoutTimer = window.setTimeout(() => {
+      clearRevealLayout(state);
+    }, prefersReducedMotion() ? 0 : 700);
+  });
+}
+
+function clearRevealLayout(state) {
+  if (state.revealLayoutTimer) {
+    window.clearTimeout(state.revealLayoutTimer);
+    state.revealLayoutTimer = 0;
+  }
+  if (!state.walls) {
+    return;
+  }
+  delete state.walls.dataset.puzzleRevealLayout;
+  state.walls.style.removeProperty("--puzzle-reveal-min-height");
 }
 
 function updateSnappedTopLine(state, bottomBar) {
@@ -1236,27 +1605,42 @@ function updateSnappedTopLine(state, bottomBar) {
     return;
   }
 
-  bar.vy += PHYSICS.snappedLineGravity;
+  const sweeping = state.revealPhase === "sweeping";
+  const revealActive = state.revealPhase !== "idle" && state.revealPhase !== "revealed";
+  const sweepG = PHYSICS.gravity + PHYSICS.revealSweepExtraGravity;
+  bar.vy += sweeping ? sweepG : PHYSICS.snappedLineGravity;
   bar.vx *= PHYSICS.snappedLineDamping;
   bar.vy *= PHYSICS.snappedLineDamping;
   bar.angularVelocity *= PHYSICS.snappedLineDamping;
+  if (revealActive) {
+    bar.vx *= PHYSICS.snappedLineRevealLateralDamping;
+    bar.angularVelocity *= PHYSICS.snappedLineRevealSpinDamping;
+  }
   bar.cx += bar.vx;
   bar.cy += bar.vy;
   bar.angle += bar.angularVelocity;
+  constrainSnappedLineRevealRotation(bar, revealActive);
 
   collideLettersWithSnappedLine(state, bar);
 
-  if (bottomBar && snappedLineOverlapsBar(bar, bottomBar)) {
+  // While the reveal is running, the snapped header line passes through the
+  // footer separator so it can fall off with the glyphs; only after that
+  // (theory: line should be gone) would we rest on the bottom bar.
+  if (!revealActive && bottomBar && snappedLineOverlapsBar(bar, bottomBar)) {
     const bottom = snappedLineBottom(bar);
     const penetration = bottom - bottomBar.top;
     if (penetration > 0) {
+      const impact = Math.abs(bar.vy);
+      const rollDirection = Math.sign(bar.angularVelocity || bar.vx || Math.sin(bar.angle) || 1);
       bar.cy -= penetration;
-      bar.vy *= -0.22;
-      bar.angularVelocity *= 0.65;
+      bar.vy *= -0.28;
+      bar.vx += rollDirection * Math.min(0.18, impact * 0.04);
+      bar.angularVelocity = (bar.angularVelocity + rollDirection * Math.min(0.018, impact * 0.003)) * 0.78;
     }
   }
 
   if (
+    !revealActive &&
     Math.abs(bar.vy) < PHYSICS.snappedLineSleepVelocity &&
     Math.abs(bar.angularVelocity) < PHYSICS.snappedLineSleepVelocity * 0.03 &&
     (bar.cy > window.innerHeight + 80 || (bottomBar && snappedLineBottom(bar) >= bottomBar.top - 0.5))
@@ -1264,6 +1648,23 @@ function updateSnappedTopLine(state, bottomBar) {
     bar.sleeping = true;
     bar.vx = 0;
     bar.vy = 0;
+    bar.angularVelocity = 0;
+  }
+}
+
+function constrainSnappedLineRevealRotation(bar, revealActive) {
+  if (!revealActive) {
+    return;
+  }
+
+  bar.angularVelocity *= PHYSICS.snappedLineRevealAngularDamping;
+  if (Math.abs(bar.angle) <= PHYSICS.snappedLineRevealMaxAngle) {
+    return;
+  }
+
+  const direction = Math.sign(bar.angle);
+  bar.angle = direction * PHYSICS.snappedLineRevealMaxAngle;
+  if (Math.sign(bar.angularVelocity) === direction) {
     bar.angularVelocity = 0;
   }
 }
@@ -1319,11 +1720,38 @@ function collideLettersWithSnappedLine(state, bar) {
       letter.y += ny * push;
       letter.px = letter.x;
       letter.py = letter.y;
+      // Equal-and-opposite to the depenetration: linear + torque (r×F) at the
+      // foot of the letter onto the bar, r = along * (dx,dy), F = -(nx,ny)·f.
+      const revealKinetic =
+        state.revealPhase === "unraveling" || state.revealPhase === "sweeping";
+      const lScale = revealKinetic ? PHYSICS.snappedLineGlyphReactionRevealLinearScale : 1;
+      const tScale = revealKinetic ? PHYSICS.snappedLineGlyphReactionRevealTorqueScale : 1;
+      const li = PHYSICS.snappedLineGlyphReactionLinear * lScale;
+      const ti = PHYSICS.snappedLineGlyphReactionTorque * tScale;
+      let dvx = -nx * push * li;
+      let dvy = -ny * push * li;
+      let domega = -along * push * ti;
+      const vcap = PHYSICS.snappedLineGlyphReactionMaxDV;
+      const wcap = PHYSICS.snappedLineGlyphReactionMaxDomega;
+      dvx = Math.max(-vcap, Math.min(vcap, dvx));
+      dvy = Math.max(-vcap, Math.min(vcap, dvy));
+      domega = Math.max(-wcap, Math.min(wcap, domega));
+      bar.vx += dvx;
+      bar.vy += dvy;
+      bar.angularVelocity += domega;
     }
   }
 }
 
-function constrainLetters(letters, lineHeight, wallRect, draggedIndexes, floorLine, ceilingLine) {
+function constrainLetters(
+  letters,
+  lineHeight,
+  wallRect,
+  draggedIndexes,
+  floorLine,
+  ceilingLine,
+  allowFallThroughViewportBottom = false
+) {
   // letter.x / letter.y live in viewport coordinates (the glyph layer is
   // position:fixed; inset:0, so transform translate places each glyph at
   // viewport (letter.x, letter.y)). Walls are therefore the literal viewport
@@ -1341,11 +1769,35 @@ function constrainLetters(letters, lineHeight, wallRect, draggedIndexes, floorLi
     if (letter.locked) {
       continue;
     }
-    constrainLetter(letter, lineHeight, minX, minY, maxX, maxY, floorLine, ceilingLine);
+    constrainLetter(
+      letter,
+      lineHeight,
+      minX,
+      minY,
+      maxX,
+      maxY,
+      floorLine,
+      ceilingLine,
+      letter.px,
+      letter.py,
+      allowFallThroughViewportBottom
+    );
   }
 }
 
-function constrainLetter(letter, lineHeight, minX, minY, maxX, maxY, floorLine, ceilingLine, prevX = letter.px, prevY = letter.py) {
+function constrainLetter(
+  letter,
+  lineHeight,
+  minX,
+  minY,
+  maxX,
+  maxY,
+  floorLine,
+  ceilingLine,
+  prevX = letter.px,
+  prevY = letter.py,
+  allowFallThroughViewportBottom = false
+) {
   if (letter.x < minX) {
     letter.x = minX;
     letter.px = letter.x + (letter.x - letter.px) * PHYSICS.bounce;
@@ -1358,7 +1810,7 @@ function constrainLetter(letter, lineHeight, minX, minY, maxX, maxY, floorLine, 
     letter.y = minY;
     letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
   }
-  if (letter.y + lineHeight > maxY) {
+  if (!allowFallThroughViewportBottom && letter.y + lineHeight > maxY) {
     letter.y = maxY - lineHeight;
     letter.py = letter.y + (letter.y - letter.py) * PHYSICS.bounce;
   }
@@ -1419,7 +1871,14 @@ function getPuzzleLineSpan(state) {
   return { left, right: left + width };
 }
 
-function applyDragPositionsForScene(state, scene, draggedIndexes, floorLine, ceilingLine) {
+function applyDragPositionsForScene(
+  state,
+  scene,
+  draggedIndexes,
+  floorLine,
+  ceilingLine,
+  allowFallThroughViewportBottom = false
+) {
   const rect = state.glyphLayer.getBoundingClientRect();
   const minX = 0;
   const minY = 0;
@@ -1454,7 +1913,19 @@ function applyDragPositionsForScene(state, scene, draggedIndexes, floorLine, cei
     letter.x = drag.clientX - rect.left - drag.offsetX;
     letter.y = drag.clientY - rect.top - drag.offsetY;
     letter.locked = false;
-    constrainLetter(letter, scene.lineHeight, minX, minY, maxX, maxY, floorLine, ceilingLine, prevX, prevY);
+    constrainLetter(
+      letter,
+      scene.lineHeight,
+      minX,
+      minY,
+      maxX,
+      maxY,
+      floorLine,
+      ceilingLine,
+      prevX,
+      prevY,
+      allowFallThroughViewportBottom
+    );
     letter.px = letter.x;
     letter.py = letter.y;
     setLetterInteractive(letter, true);
@@ -1474,7 +1945,12 @@ function unlockReward(state) {
     return;
   }
   state.reward.hidden = false;
-  state.reward.dataset.puzzleRevealed = "true";
+  window.requestAnimationFrame(() => {
+    if (!state.rewardUnlocked || !state.reward) {
+      return;
+    }
+    state.reward.dataset.puzzleRevealed = "true";
+  });
 }
 
 function hideReward(state) {
