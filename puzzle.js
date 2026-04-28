@@ -44,8 +44,8 @@ const PHYSICS = {
   ceilingSpringK: 0.2,
   // Ceiling spring damping (lower = settles faster).
   ceilingDamping: 0.82,
-  // Contribution of each contacting glyph to ceiling load.
-  ceilingGlyphMass: 0.35,
+  // Contribution of each contacting glyph to header/top-bar reveal load.
+  ceilingGlyphMass: 0.6,
   // Downward spring displacement (px) required to count as solved.
   ceilingSolveDisplacement: 14,
   // Consecutive simulation ticks above threshold before reveal.
@@ -87,14 +87,14 @@ const PHYSICS = {
   revealLineNudgeHorizontalMargin: 24,
   revealLineNudgeMaxPx: 32,
   revealLineNudgeAngleMax: 0.12,
-  // Added to `gravity` for letters/line while sweeping (keeps a brisk exit).
-  revealSweepExtraGravity: 0.1,
+  // Added to `gravity` for letters/line while sweeping (lower = linger on screen).
+  revealSweepExtraGravity: 0.04,
   // Minimum ticks the reveal stays in the unwind phase once it starts.
   revealUnravelMinTicks: 300,
-  // Minimum ticks spent sweeping before quotes can fade in.
-  revealSweepMinTicks: 420,
-  // Fallback ticks before revealing even if a long chain is still visible.
-  revealSweepMaxTicks: 720,
+  // Minimum ticks spent sweeping before finish can run once all glyphs are off-screen.
+  revealSweepMinTicks: 480,
+  // Fallback ticks before forced finish if chains are slow to exit the viewport.
+  revealSweepMaxTicks: 1000,
   // How far below the viewport glyphs should be before the reward appears.
   revealOffscreenMargin: 36
 };
@@ -126,16 +126,32 @@ const TEXT_STYLE_KEYS = [
   "opacity"
 ];
 
-const FAVORITE_QUOTES = [
-  "Everything should be made as simple as possible, but not simpler. - Albert Einstein",
-  "The man who moves a mountain begins by carrying away small stones. - Confucius",
-  "Chance favors the prepared mind. - Louis Pasteur",
-  "In the middle of difficulty lies opportunity. - Albert Einstein",
-  "We are what we repeatedly do. Excellence, then, is not an act but a habit. - Will Durant",
-  "What I cannot create, I do not understand. - Richard Feynman",
-  "First, solve the problem. Then, write the code. - John Johnson",
-  "All models are wrong, but some are useful. - George Box"
+/** @typedef {{ id: string; quote: string; author: string }} PuzzleQuoteRow */
+
+/** @type {readonly PuzzleQuoteRow[]} */
+const PUZZLE_QUOTES = [
+  { id: "aristotle-educated-mind", quote: "It is the mark of an educated mind to entertain a thought without accepting it.", author: "Aristotle" },
+  { id: "michelangelo-aim", quote: "The greatest danger for most of us is not that our aim is too high and we miss it, but that it is too low and we reach it.", author: "Michelangelo" },
+  { id: "friedman-optimists", quote: "Pessimists sound smart. Optimists make money.", author: "Nat Friedman" },
+  { id: "marczewski-choose", quote: "You can't wait till everything is good to be happy. You have to choose.", author: "Jane Marczewski" },
+  { id: "leguin-journey", quote: "It is good to have an end to journey toward; but it is the journey that matters, in the end.", author: "Ursula K. Le Guin" },
+  { id: "greek-proverb-trees", quote: "A society grows great when old men plant trees whose shade they know they shall never sit in.", author: "Greek proverb" },
+  { id: "nipsey-marathon", quote: "It's a marathon, not a sprint, but I still gotta win.", author: "Nipsey Hussle" },
+  { id: "immortal-technique-purpose", quote: "The purpose of life is a life with a purpose. So I'd rather die for a cause than live a life that is worthless.", author: "Immortal Technique" }
 ];
+
+/* Hold after unhide before the tile (card) starts to fade in. */
+const REWARD_TILE_APPEAR_DELAY_MS = 1650;
+/* Beat 1: only the card chrome (section box): opacity + tiny Y — not the quote text. */
+/* Beats 2–3: kicker / h2 / blockquote / hint, then list lines — each line’s own fade. */
+const REWARD_BEAT1_MS = 3000;
+const REWARD_ENTRANCE_MS = 3900;
+const REWARD_BEAT_GAP_MS = 360;
+const REWARD_BEAT2_STAGGER_MS = 210;
+const REWARD_BEAT3_STAGGER_MS = 150;
+const REWARD_REDUCE_MOTION_MS = 840;
+/** Even fade (avoids “fast then done” from strong ease-out on long durations). */
+const REWARD_EASE = "cubic-bezier(0.45, 0, 0.55, 1)";
 
 function boot() {
   const main = document.querySelector("main[data-puzzle-stage]");
@@ -146,8 +162,13 @@ function boot() {
   const separator = document.querySelector("[data-puzzle-separator]");
   const ceiling = document.querySelector("[data-puzzle-ceiling]");
   const reward = document.querySelector("[data-puzzle-reward]");
-  const featuredQuote = document.querySelector("[data-puzzle-featured-quote]");
   const quoteStack = document.querySelector("[data-puzzle-quote-stack]");
+  const socialHintIcons = new Map(
+    [...document.querySelectorAll("[data-puzzle-social-icon]")].map((el) => [
+      el.dataset.puzzleSocialIcon,
+      el
+    ])
+  );
 
   if (!main || !trigger || !glyphLayer || !resetButton || !walls) {
     return;
@@ -162,7 +183,6 @@ function boot() {
     separator,
     ceiling,
     reward,
-    featuredQuote,
     quoteStack,
     stage: "static",
     scenes: [],
@@ -185,6 +205,9 @@ function boot() {
     revealScrollY: 0,
     revealLayoutTimer: 0,
     rewardUnlocked: false,
+    rewardSweepEntranceDone: false,
+    rewardAnimations: [],
+    socialHintIcons,
     smoothedLineNudgeY: 0
   };
 
@@ -195,14 +218,27 @@ function boot() {
 }
 
 function initRewardContent(state) {
-  if (!state.reward || !state.featuredQuote || !state.quoteStack) {
+  if (!state.reward || !state.quoteStack) {
     return;
   }
-  state.featuredQuote.textContent = FAVORITE_QUOTES[0];
+  if (!PUZZLE_QUOTES.length) {
+    return;
+  }
   state.quoteStack.textContent = "";
-  for (let i = 1; i < FAVORITE_QUOTES.length; i += 1) {
+  state.quoteStack.classList.add("puzzle-quote-stack--floaty");
+  for (const row of PUZZLE_QUOTES) {
     const item = document.createElement("li");
-    item.textContent = FAVORITE_QUOTES[i];
+    const quote = document.createElement("blockquote");
+    quote.className = "puzzle-quote-card";
+    const quoteText = document.createElement("span");
+    quoteText.className = "puzzle-quote-text";
+    quoteText.textContent = `"${row.quote}"`;
+    const author = document.createElement("cite");
+    author.textContent = `- ${row.author}`;
+    quote.append(quoteText, author);
+    item.appendChild(quote);
+    item.dataset.quoteId = row.id;
+    item.tabIndex = 0;
     state.quoteStack.appendChild(item);
   }
 }
@@ -284,6 +320,7 @@ function resetPuzzle(state) {
   state.revealScrollY = 0;
   clearRevealLayout(state);
   state.rewardUnlocked = false;
+  state.rewardSweepEntranceDone = false;
   state.smoothedLineNudgeY = 0;
   if (state.separator) {
     state.separator.style.transform = "";
@@ -296,6 +333,7 @@ function resetPuzzle(state) {
     state.ceiling.style.removeProperty("--puzzle-ceiling-opacity");
     state.ceiling.classList.remove("is-compressing");
   }
+  clearSocialHintIcons(state);
   hideReward(state);
 }
 
@@ -395,6 +433,7 @@ function buildElementScene(el, glyphLayer) {
   if (!text.trim()) {
     return null;
   }
+  const socialKey = el.dataset.puzzleSocialRun || "";
 
   const elRect = el.getBoundingClientRect();
   if (!elRect.width || !elRect.height) {
@@ -547,6 +586,7 @@ function buildElementScene(el, glyphLayer) {
     lineHeight,
     style: elStyle,
     element: el,
+    socialKey,
     sleeping: false,
     idleTicks: 0,
     hasFolded: false,
@@ -1243,10 +1283,7 @@ function getTopFaceLoad(scenes, bar, requireResting) {
   const restThreshold = PHYSICS.sleepVelocity * 2;
   for (const scene of scenes) {
     for (const letter of scene.letters) {
-      if (letter.locked || !overlapsBarFace(letter, bar)) {
-        continue;
-      }
-      if (Math.abs((letter.y + letter.h) - bar.top) > Math.max(1.5, bar.thickness / 2)) {
+      if (!isTopBarFaceContact(letter, bar)) {
         continue;
       }
       if (requireResting) {
@@ -1264,6 +1301,46 @@ function getTopFaceLoad(scenes, bar, requireResting) {
     count,
     centerX: count ? weightedX / count : bar.cx
   };
+}
+
+function isTopBarFaceContact(letter, bar) {
+  if (!bar || letter.locked || !overlapsBarFace(letter, bar)) {
+    return false;
+  }
+  const contactSlop = Math.max(1.5, bar.thickness / 2);
+  return Math.abs((letter.y + letter.h) - bar.top) <= contactSlop;
+}
+
+function getTopBarSocialHits(scenes, bar) {
+  const hits = new Set();
+  if (!bar) {
+    return hits;
+  }
+  for (const scene of scenes) {
+    if (!scene.socialKey) {
+      continue;
+    }
+    for (const letter of scene.letters) {
+      if (isTopBarFaceContact(letter, bar)) {
+        hits.add(scene.socialKey);
+        break;
+      }
+    }
+  }
+  return hits;
+}
+
+function updateSocialHintIcons(state, activeKeys) {
+  if (!state.socialHintIcons) {
+    return;
+  }
+  for (const [key, icon] of state.socialHintIcons.entries()) {
+    icon.classList.toggle("is-puzzle-top-hit", activeKeys.has(key));
+  }
+}
+
+function clearSocialHintIcons(state) {
+  updateSocialHintIcons(state, new Set());
 }
 
 function updateBottomBarSpring(state, bottomBar) {
@@ -1284,8 +1361,11 @@ function updateBottomBarSpring(state, bottomBar) {
 
 function updateTopBarSpringAndSnap(state, topBar) {
   if (!topBar || state.topLineSnapped) {
+    clearSocialHintIcons(state);
     return;
   }
+
+  updateSocialHintIcons(state, getTopBarSocialHits(state.scenes, topBar));
 
   const load = getTopFaceLoad(state.scenes, topBar, false);
   const weight = load.count * PHYSICS.ceilingGlyphMass * PHYSICS.gravity;
@@ -1304,6 +1384,7 @@ function updateTopBarSpringAndSnap(state, topBar) {
   }
 
   if (state.ceilingSolveTicks >= PHYSICS.ceilingSolveHoldTicks) {
+    clearSocialHintIcons(state);
     snapTopLine(state, topBar, load.centerX);
   }
 }
@@ -1369,6 +1450,7 @@ function getRevealLoadCenterX(state, topBar) {
 
 function startRevealSequence(state) {
   clearDrags(state);
+  clearSocialHintIcons(state);
   lockRevealLayout(state);
   lockRevealScroll(state);
   state.revealPhase = "unraveling";
@@ -1390,6 +1472,7 @@ function updateRevealSequence(state) {
       state.revealPhase = "sweeping";
       state.revealTicks = 0;
       clearDrags(state);
+      beginRewardEntrance(state);
     }
     return;
   }
@@ -1464,7 +1547,7 @@ function unlockAllScenesNow(state) {
 }
 
 function moveUnlockedGlyphsOffscreen(state) {
-  const y = window.innerHeight + PHYSICS.revealOffscreenMargin + 20;
+  const thresholdY = window.innerHeight + PHYSICS.revealOffscreenMargin;
   for (const scene of state.scenes) {
     scene.sleeping = true;
     scene.idleTicks = PHYSICS.sleepFrames + 1;
@@ -1472,35 +1555,46 @@ function moveUnlockedGlyphsOffscreen(state) {
       if (letter.locked) {
         continue;
       }
-      letter.y = y;
-      letter.py = y;
-      letter.el.style.opacity = "0";
+      const outOfView = letter.y >= thresholdY;
+      letter.el.style.opacity = outOfView ? "0" : "1";
       setLetterInteractive(letter, false);
     }
   }
   if (state.snappedTopLine) {
-    state.snappedTopLine.cy = y;
     state.snappedTopLine.vy = 0;
     state.snappedTopLine.angularVelocity = 0;
     state.snappedTopLine.sleeping = true;
+    if (state.ceiling) {
+      const bottom = snappedLineBottom(state.snappedTopLine);
+      if (bottom > thresholdY) {
+        state.ceiling.style.setProperty("--puzzle-ceiling-opacity", "0");
+      }
+    }
   }
-  if (state.ceiling) {
-    state.ceiling.style.setProperty("--puzzle-ceiling-opacity", "0");
-  }
-  if (state.glyphLayer) {
-    state.glyphLayer.hidden = true;
-  }
+  // Keep glyph layer visible so letters on-screen (e.g. sweep timeout) stay put.
 }
 
 function finishReveal(state) {
+  let preSwapHeight = 0;
+  if (state.walls) {
+    preSwapHeight = Math.ceil(state.walls.getBoundingClientRect().height);
+  }
   state.revealPhase = "revealed";
   state.revealTicks = 0;
   const restoreY = unlockRevealScroll(state);
+  if (state.walls && preSwapHeight > 0) {
+    if (state.revealLayoutTimer) {
+      window.clearTimeout(state.revealLayoutTimer);
+      state.revealLayoutTimer = 0;
+    }
+    state.walls.style.setProperty("--puzzle-reveal-min-height", `${preSwapHeight}px`);
+    state.walls.dataset.puzzleRevealLayout = "locked";
+  }
   if (state.main) {
     state.main.dataset.puzzleStage = "revealed";
   }
-  unlockReward(state);
-  settleRevealLayout(state);
+  completeRewardReveal(state);
+  settleRevealLayout(state, preSwapHeight);
   scrollRewardIntoView(state, restoreY);
 }
 
@@ -1545,10 +1639,22 @@ function scrollRewardIntoView(state, fallbackY) {
     return;
   }
 
+  const margin = 96;
   requestAnimationFrame(() => {
-    const top = state.reward.getBoundingClientRect().top + window.scrollY - 96;
+    const r = state.reward.getBoundingClientRect();
+    const vh = window.innerHeight;
+    const cutOffTop = r.top < margin - 2;
+    const cutOffBottom = r.bottom > vh - 4;
+    if (!cutOffTop && !cutOffBottom) {
+      return;
+    }
+    const top = r.top + window.scrollY - margin;
+    const targetTop = Math.max(0, top);
+    if (Math.abs(targetTop - window.scrollY) < 4) {
+      return;
+    }
     window.scrollTo({
-      top: Math.max(0, top),
+      top: targetTop,
       behavior: prefersReducedMotion() ? "auto" : "smooth"
     });
   });
@@ -1569,18 +1675,25 @@ function lockRevealLayout(state) {
   state.walls.dataset.puzzleRevealLayout = "locked";
 }
 
-function settleRevealLayout(state) {
+/* After finishReveal: keep min-height through reward entrance (see REWARD_* timing). */
+const REVEAL_FADE_SETTLE_MS = 16650;
+
+function settleRevealLayout(state, preSwapHeight) {
   if (!state.walls || !state.reward) {
     clearRevealLayout(state);
     return;
   }
 
   window.requestAnimationFrame(() => {
-    const height = Math.ceil(state.reward.getBoundingClientRect().height + 32);
+    const rewardBlock = Math.ceil(state.reward.getBoundingClientRect().height + 32);
+    const pre = preSwapHeight > 0 ? preSwapHeight : 0;
+    const height = Math.max(rewardBlock, pre);
     state.walls.style.setProperty("--puzzle-reveal-min-height", `${height}px`);
+    state.walls.dataset.puzzleRevealLayout = "locked";
+    const delay = prefersReducedMotion() ? 0 : REVEAL_FADE_SETTLE_MS;
     state.revealLayoutTimer = window.setTimeout(() => {
       clearRevealLayout(state);
-    }, prefersReducedMotion() ? 0 : 700);
+    }, delay);
   });
 }
 
@@ -2018,26 +2131,179 @@ function syncScene(scene) {
   }
 }
 
-function unlockReward(state) {
+function cancelRewardAnimations(state) {
+  if (!state.rewardAnimations?.length) {
+    state.rewardAnimations = [];
+    return;
+  }
+  for (const anim of state.rewardAnimations) {
+    try {
+      anim.cancel();
+    } catch (_) {
+      // ignore
+    }
+  }
+  state.rewardAnimations = [];
+}
+
+function clearRewardEntranceStyles(rewardRoot) {
+  if (!rewardRoot) {
+    return;
+  }
+  rewardRoot.style.removeProperty("clip-path");
+  rewardRoot.style.removeProperty("opacity");
+  rewardRoot.style.removeProperty("transform");
+  const nodes = rewardRoot.querySelectorAll(
+    ".puzzle-reward-kicker, .puzzle-reward > h2, .puzzle-reward-hint, .puzzle-quote-stack li"
+  );
+  for (const el of nodes) {
+    el.style.removeProperty("opacity");
+    el.style.removeProperty("transform");
+  }
+}
+
+function pushRewardAnim(state, anim) {
+  if (!state.rewardAnimations) {
+    state.rewardAnimations = [];
+  }
+  state.rewardAnimations.push(anim);
+}
+
+/** Runs when unravel finishes and sweeping begins — quotes fade while glyphs still fall. */
+function beginRewardEntrance(state) {
+  if (!state.reward || state.rewardSweepEntranceDone) {
+    return;
+  }
+  state.rewardSweepEntranceDone = true;
   state.rewardUnlocked = true;
+
+  cancelRewardAnimations(state);
+
+  const reduceMotion = prefersReducedMotion();
+  state.reward.style.opacity = "0";
+  state.reward.style.transform = reduceMotion ? "translateY(0)" : "translateY(5px)";
+  state.reward.hidden = false;
+  state.reward.setAttribute("aria-busy", "true");
+
+  window.requestAnimationFrame(() => {
+    if (!state.reward) {
+      return;
+    }
+
+    if (state.walls?.dataset?.puzzleRevealLayout === "locked") {
+      const h = Math.ceil(state.walls.getBoundingClientRect().height);
+      state.walls.style.setProperty("--puzzle-reveal-min-height", `${h}px`);
+    }
+
+    const r = state.reward;
+    const kicker = r.querySelector(".puzzle-reward-kicker");
+    const heading = r.querySelector("h2");
+    const hint = r.querySelector(".puzzle-reward-hint");
+    const lis = [...r.querySelectorAll(".puzzle-quote-stack li")];
+    const headEls = [kicker, heading, hint].filter(
+      (el) => el instanceof Element
+    );
+
+    const run = async () => {
+      const textFade = [
+        { opacity: 0, transform: "translateY(2px)" },
+        { opacity: 1, transform: "translateY(0)" }
+      ];
+      try {
+        if (reduceMotion) {
+          const o = r.animate([{ opacity: 0 }, { opacity: 1 }], {
+            delay: REWARD_TILE_APPEAR_DELAY_MS,
+            duration: REWARD_REDUCE_MOTION_MS,
+            easing: REWARD_EASE,
+            fill: "forwards"
+          });
+          pushRewardAnim(state, o);
+          await o.finished;
+          for (const el of [...headEls, ...lis]) {
+            el.style.opacity = "1";
+            el.style.transform = "translateY(0)";
+          }
+          return;
+        }
+
+        await new Promise((resolve) => {
+          setTimeout(resolve, REWARD_TILE_APPEAR_DELAY_MS);
+        });
+
+        const boxAnim = r.animate(
+          [
+            { opacity: 0, transform: "translateY(5px)" },
+            { opacity: 1, transform: "translateY(0)" }
+          ],
+          { duration: REWARD_BEAT1_MS, easing: REWARD_EASE, fill: "forwards" }
+        );
+        pushRewardAnim(state, boxAnim);
+        await boxAnim.finished;
+
+        const headAnims = headEls.map((el, idx) => {
+          const a = el.animate(textFade, {
+            duration: REWARD_ENTRANCE_MS,
+            delay: idx * REWARD_BEAT2_STAGGER_MS,
+            easing: REWARD_EASE,
+            fill: "forwards"
+          });
+          pushRewardAnim(state, a);
+          return a;
+        });
+        if (headAnims.length) {
+          await Promise.all(headAnims.map((a) => a.finished));
+        }
+
+        await new Promise((resolve) => {
+          setTimeout(resolve, REWARD_BEAT_GAP_MS);
+        });
+
+        const listAnims = lis.map((el, idx) => {
+          const a = el.animate(textFade, {
+            duration: REWARD_ENTRANCE_MS,
+            delay: idx * REWARD_BEAT3_STAGGER_MS,
+            easing: REWARD_EASE,
+            fill: "forwards"
+          });
+          pushRewardAnim(state, a);
+          return a;
+        });
+        if (listAnims.length) {
+          await Promise.all(listAnims.map((a) => a.finished));
+        }
+      } catch {
+        // e.g. animation cancelled
+      } finally {
+        if (state.reward?.getAttribute("aria-busy") === "true") {
+          state.reward.removeAttribute("aria-busy");
+        }
+      }
+    };
+
+    void run();
+  });
+}
+
+/** After sweep completes: page stage + list completion marker (entrance may still be animating). */
+function completeRewardReveal(state) {
   if (!state.reward) {
     return;
   }
-  state.reward.hidden = false;
-  window.requestAnimationFrame(() => {
-    if (!state.rewardUnlocked || !state.reward) {
-      return;
-    }
-    state.reward.dataset.puzzleRevealed = "true";
-  });
+  state.rewardUnlocked = true;
+  clearSocialHintIcons(state);
+  state.reward.dataset.puzzleRevealed = "true";
 }
 
 function hideReward(state) {
   if (!state.reward) {
     return;
   }
+  cancelRewardAnimations(state);
+  clearRewardEntranceStyles(state.reward);
+  state.rewardSweepEntranceDone = false;
   state.reward.hidden = true;
   delete state.reward.dataset.puzzleRevealed;
+  state.reward.removeAttribute("aria-busy");
 }
 
 function clearDrags(state) {
