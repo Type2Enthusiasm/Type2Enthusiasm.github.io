@@ -79,10 +79,10 @@ Only `index.html` currently satisfies this full contract and loads `puzzle.js`. 
 
 ## Puzzle implementation notes
 
-`puzzle.js` owns several concepts at once:
+`puzzle.js` still owns several concepts at once, but the first cleanup passes have started creating internal seams:
 
 - bootstrapping and DOM lookup;
-- reward quote rendering;
+- reward reveal state/animation orchestration;
 - text measurement and scene construction;
 - drag input;
 - Verlet-style glyph physics;
@@ -92,7 +92,9 @@ Only `index.html` currently satisfies this full contract and loads `puzzle.js`. 
 - scroll/layout locking during reveal;
 - reward entrance animation.
 
-These are real concepts, not arbitrary helper slices. If the module is split, use these concepts as seams.
+`puzzle/reward.js` owns reward quote data, reward quote DOM rendering, and reward animation timing constants. Keep reward content/timing changes there unless they need puzzle state.
+
+These are real concepts, not arbitrary helper slices. If the module is split further, use these concepts as seams.
 
 The puzzle uses viewport coordinates because the glyph layer is `position: fixed; inset: 0`. This matters for drag math, collision math, scroll locking, and resize behavior.
 
@@ -139,6 +141,8 @@ A good refactor here should:
 - protect puzzle behavior with at least manual or scripted smoke checks;
 - make load-bearing data attributes and CSS assumptions more explicit;
 - improve locality without creating a maze of shallow modules.
+
+Puzzle-specific CSS is intentionally grouped under the “Puzzle-owned styles” section in `style.css`; keep new puzzle classes/data-attribute hooks there unless they are clearly base-site styling.
 
 ## Suggested smoke checks for any cleanup
 

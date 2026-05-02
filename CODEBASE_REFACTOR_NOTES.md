@@ -31,6 +31,12 @@ Completed in the first low-risk cleanup pass:
 - Removed production keyboard shortcuts for forced puzzle reveal/unravel.
 - Removed `skills-lock.json` from the website repo and ignored future lockfiles unless explicitly documented.
 
+Continued on the same branch before PR acceptance:
+
+- Grouped puzzle CSS under a contiguous “Puzzle-owned styles” section.
+- Extracted reward quote data/rendering/timing constants to `puzzle/reward.js`.
+- Extended the validation harness to syntax-check JavaScript in the new `puzzle/` module directory.
+
 ## Preserve these qualities
 
 - The site should remain static and easy to deploy on GitHub Pages.

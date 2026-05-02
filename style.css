@@ -150,19 +150,6 @@ body.puzzle-scroll-lock{
   border-color:var(--accent-hover);
 }
 
-.site-social a.is-puzzle-top-hit{
-  color:var(--accent-hover);
-  border-color:color-mix(in oklab, var(--hairline) 35%, var(--accent));
-  background:color-mix(in oklab, var(--bg) 86%, var(--accent) 10%);
-  box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent),
-             0 8px 22px -14px color-mix(in oklab, var(--accent) 65%, transparent);
-  animation:puzzle-social-float 1.8s ease-in-out infinite;
-}
-
-@keyframes puzzle-social-float{
-  0%, 100%{ transform:translateY(0); }
-  50%{ transform:translateY(-2px); }
-}
 
 /* Feather SVG size (after feather.replace) */
 .site-social svg{ width:18px; height:18px; }
@@ -172,12 +159,6 @@ body.puzzle-scroll-lock{
   .header-row{ align-items:flex-start; }
   .site-social a{ width:28px; height:28px }
   .site-social svg{ width:16px; height:16px }
-}
-
-@media (prefers-reduced-motion: reduce){
-  .site-social a.is-puzzle-top-hit{
-    animation:none;
-  }
 }
 
 
@@ -190,10 +171,6 @@ main{ font-feature-settings: "liga" 1, "kern" 0; }
   padding:1.25rem 0 3rem;
 }
 
-[data-puzzle-walls][data-puzzle-reveal-layout="locked"]{
-  min-height:var(--puzzle-reveal-min-height);
-  transition:min-height 620ms cubic-bezier(0.25, 1, 0.5, 1);
-}
 
 /* Heading sizes with thin weight */
 h1,h2,h3{
@@ -259,6 +236,83 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
 /* Tables */
 .table{ width:100%; border-collapse:collapse }
 .table th,.table td{ padding:.5rem .4rem; border-bottom:1px solid var(--hairline); text-align:left }
+
+
+/* Footer */
+footer{
+  width:100%;
+  padding:1rem 0 3rem;
+  margin-top:0;
+}
+
+.site-footer--ruled .container{
+  border-top:1px solid var(--hairline);
+  padding-top:1rem;
+}
+
+/* Contact */
+.contact p{ max-width:65ch; }
+.social .btn{
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.6rem .9rem;
+  color:var(--muted);
+  border:1px solid var(--hairline);
+  border-radius:var(--radius);
+  background:rgba(255, 250, 246, 0.82);
+  text-decoration:none;
+}
+.social .btn:hover{
+  color:var(--accent-hover);
+  border-color:var(--accent-hover);
+}
+.social .btn:focus-visible{ outline:2px solid var(--link); outline-offset:2px; }
+
+/* Mobile */
+@media (max-width:640px){
+  .site-header{ padding:1.5rem 0 .75rem }
+  .site-title{ font-size:1.6rem }
+  .header-row{ align-items:center }
+}
+
+::selection {
+  background: rgba(184, 51, 24, 0.16);
+  color: var(--text);
+}
+
+
+/* ==========================================================================
+   Puzzle-owned styles
+   --------------------------------------------------------------------------
+   The puzzle module owns these classes/data-attribute hooks. Keep this section
+   contiguous unless a rule is clearly a base-site concern.
+   ========================================================================== */
+
+.site-social a.is-puzzle-top-hit{
+  color:var(--accent-hover);
+  border-color:color-mix(in oklab, var(--hairline) 35%, var(--accent));
+  background:color-mix(in oklab, var(--bg) 86%, var(--accent) 10%);
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent),
+             0 8px 22px -14px color-mix(in oklab, var(--accent) 65%, transparent);
+  animation:puzzle-social-float 1.8s ease-in-out infinite;
+}
+
+@keyframes puzzle-social-float{
+  0%, 100%{ transform:translateY(0); }
+  50%{ transform:translateY(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .site-social a.is-puzzle-top-hit{
+    animation:none;
+  }
+}
+
+[data-puzzle-walls][data-puzzle-reveal-layout="locked"]{
+  min-height:var(--puzzle-reveal-min-height);
+  transition:min-height 620ms cubic-bezier(0.25, 1, 0.5, 1);
+}
 
 /* Separator */
 .puzzle-separator{
@@ -427,50 +481,7 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
   }
 }
 
-/* Footer */
-footer{
-  width:100%;
-  padding:1rem 0 3rem;
-  margin-top:0;
-}
-
-.site-footer--ruled .container{
-  border-top:1px solid var(--hairline);
-  padding-top:1rem;
-}
-
-/* Contact */
-.contact p{ max-width:65ch; }
-.social .btn{
-  display:inline-flex;
-  align-items:center;
-  gap:.5rem;
-  padding:.6rem .9rem;
-  color:var(--muted);
-  border:1px solid var(--hairline);
-  border-radius:var(--radius);
-  background:rgba(255, 250, 246, 0.82);
-  text-decoration:none;
-}
-.social .btn:hover{
-  color:var(--accent-hover);
-  border-color:var(--accent-hover);
-}
-.social .btn:focus-visible{ outline:2px solid var(--link); outline-offset:2px; }
-
-/* Mobile */
-@media (max-width:640px){
-  .site-header{ padding:1.5rem 0 .75rem }
-  .site-title{ font-size:1.6rem }
-  .header-row{ align-items:center }
-}
-
-::selection {
-  background: rgba(184, 51, 24, 0.16);
-  color: var(--text);
-}
-
-/* ===== puzzle overlay ===== */
+/* Puzzle glyph layer, controls, and hidden text */
 .puzzle-glyph-layer{
   position:fixed;
   inset:0;

@@ -139,11 +139,20 @@ if (puzzleSource.includes("forcePuzzleReveal") || /addEventListener\(["']keydown
   fail("puzzle.js: production debug keyboard shortcuts should not return without an explicit debug gate");
 }
 
+const jsFiles = [
+  ...readdirSync(root).filter((name) => name.endsWith(".js")),
+  ...(existsSync(path.join(root, "puzzle"))
+    ? readdirSync(path.join(root, "puzzle")).filter((name) => name.endsWith(".js")).map((name) => path.join("puzzle", name))
+    : []),
+].sort();
+
 for (const file of ["puzzle.js", "pretext.js"]) {
   if (!existsSync(path.join(root, file))) {
     fail(`missing ${file}`);
-    continue;
   }
+}
+
+for (const file of jsFiles) {
   try {
     execFileSync(process.execPath, ["--check", file], { cwd: root, stdio: "pipe" });
   } catch (error) {
@@ -156,7 +165,7 @@ note("checked local href/src references");
 note("checked visible-page aria-current nav state");
 note("checked homepage puzzle contract");
 note("checked cleanup invariants for stale canvas, debug shortcuts, and agent lockfile");
-note("checked puzzle.js and pretext.js syntax");
+note(`checked ${jsFiles.length} JavaScript files for syntax`);
 
 if (errors.length) {
   console.error("Site check failed:\n");
