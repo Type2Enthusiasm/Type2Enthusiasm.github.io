@@ -19,6 +19,18 @@ This is a static personal website with five HTML pages, one shared stylesheet, a
 
 The site is already small and visually coherent. The slop is not “too many files”; the slop is mostly that a few important concepts are implicit and several unrelated responsibilities are packed behind broad interfaces.
 
+## Cleanup pass 1 progress
+
+Branch: `cleanup/website-slop-pass-1`
+
+Completed in the first low-risk cleanup pass:
+
+- Added `scripts/check-site.mjs` as a no-dependency validation harness.
+- Aligned homepage copy with the current homepage-only puzzle contract.
+- Removed unused puzzle canvas markup/styles.
+- Removed production keyboard shortcuts for forced puzzle reveal/unravel.
+- Removed `skills-lock.json` from the website repo and ignored future lockfiles unless explicitly documented.
+
 ## Preserve these qualities
 
 - The site should remain static and easy to deploy on GitHub Pages.

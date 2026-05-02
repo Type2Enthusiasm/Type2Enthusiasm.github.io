@@ -254,14 +254,6 @@ function bindEvents(state) {
 
   state.resetButton.addEventListener("click", () => resetPuzzle(state));
 
-  window.addEventListener("keydown", (e) => {
-    if ((e.key === "f" || e.key === "F") && state.stage === "active") {
-      startUnravelAllScenes(state);
-    } else if (e.key === "~" && state.stage === "active") {
-      forcePuzzleReveal(state);
-    }
-  });
-
   window.addEventListener("resize", () => refreshScene(state));
   window.addEventListener("scroll", () => refreshScene(state), { passive: true });
 }
@@ -1387,20 +1379,6 @@ function updateTopBarSpringAndSnap(state, topBar) {
     clearSocialHintIcons(state);
     snapTopLine(state, topBar, load.centerX);
   }
-}
-
-function forcePuzzleReveal(state) {
-  if (state.rewardUnlocked || state.revealPhase !== "idle") {
-    return;
-  }
-
-  if (!state.topLineSnapped) {
-    const topBar = buildAttachedTopBar(state);
-    snapTopLine(state, topBar, getRevealLoadCenterX(state, topBar));
-    return;
-  }
-
-  startRevealSequence(state);
 }
 
 function snapTopLine(state, topBar, loadCenterX) {

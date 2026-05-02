@@ -75,7 +75,7 @@ Current puzzle/page contract:
 - `[data-puzzle-reset]` exits/reset the puzzle.
 - `[data-puzzle-reward]` and `[data-puzzle-quote-stack]` render the solved reward.
 
-Only `index.html` currently satisfies this full contract and loads `puzzle.js`. If the homepage copy says there is a puzzle “on each page,” either wire every page or change the copy.
+Only `index.html` currently satisfies this full contract and loads `puzzle.js`. Homepage copy should describe the puzzle as homepage-only unless other pages are deliberately wired as puzzle host pages.
 
 ## Puzzle implementation notes
 
@@ -100,12 +100,7 @@ The puzzle uses viewport coordinates because the glyph layer is `position: fixed
 
 Reduced-motion support is intentional and should be preserved.
 
-Debug/development shortcuts currently exist while the puzzle is active:
-
-- `f` starts unraveling all scenes.
-- `~` force-reveals the puzzle.
-
-Before production polish, decide whether these should remain, be gated, or be removed.
+Debug/development keyboard shortcuts are not part of the production puzzle interface. They were removed during the first cleanup pass; do not reintroduce shortcuts such as forced reveal without an explicit debug gate and documentation.
 
 ## `pretext.js` domain knowledge
 
@@ -129,6 +124,10 @@ That means provenance is incomplete in the repo. Before editing or upgrading `pr
 - why vendoring is preferred over loading as a dependency.
 
 Treat `pretext.js` as vendored code. Prefer adding a small adapter around it rather than editing generated internals directly.
+
+## Agent workflow files
+
+Agent skill lockfiles are not runtime website assets. Do not commit `skills-lock.json` to this static site repo unless a future agent workflow explicitly documents why the public website should carry it.
 
 ## Refactor constraints
 

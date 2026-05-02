@@ -471,30 +471,6 @@ footer{
 }
 
 /* ===== puzzle overlay ===== */
-.puzzle-overlay{
-  position:fixed;
-  inset:0;
-  width:100vw;
-  height:100vh;
-  pointer-events:none;
-  z-index:30;
-  touch-action:none;
-}
-
-.puzzle-overlay.is-active{
-  display:block;
-  pointer-events:auto;
-  cursor:grab;
-}
-
-.puzzle-overlay.is-active:active{
-  cursor:grabbing;
-}
-
-.puzzle-overlay[hidden]{
-  display:none !important;
-}
-
 .puzzle-glyph-layer{
   position:fixed;
   inset:0;
