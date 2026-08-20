@@ -42,10 +42,12 @@ Avoid reintroducing theme toggles or large experimental visual systems unless th
 - `index.html` — main homepage and current puzzle host.
 - `research.html` — research narrative and publications.
 - `contact.html` — primary contact path.
-- `MPCNC.html` — CNC/project page. Currently not in top navigation; treat as intentionally semi-hidden until Harrison decides otherwise.
-- `consulting.html` — consulting page. Currently not in top navigation; treat as intentionally semi-hidden until Harrison decides otherwise.
 
-If hidden/semi-hidden page status changes, update this section before or alongside nav changes.
+The former CNC/projects page (`MPCNC.html` plus its download zips) was removed from the public site and archived privately at `../Type2Enthusiasm-private-archive/MPCNC/` (sibling of this repo, not deployed). Do not re-add it to GitHub Pages unless it is intentionally public again.
+
+The former consulting page (`consulting.html`) was likewise removed and archived at `../Type2Enthusiasm-private-archive/consulting/`. It was already off the public nav with no inbound links.
+
+The outdated public CV (`downloads/CV[esterly].pdf`) was likewise removed and archived at `../Type2Enthusiasm-private-archive/cv/`.
 
 ## Puzzle domain model
 
@@ -96,6 +98,8 @@ These are real concepts, not arbitrary helper slices. If the module is split, us
 
 The puzzle uses viewport coordinates because the glyph layer is `position: fixed; inset: 0`. This matters for drag math, collision math, scroll locking, and resize behavior.
 
+After solve, the header line falls with a kinematic tween (not Verlet). Original puzzle copy is collapsed out of flow when the reward card unhides, with walls min-height locked so the footer does not jump. `data-puzzle-revealed="true"` is set only after the quote entrance animation finishes; that marker unlocks floaty quote CSS and full-opacity fallbacks.
+
 `main` currently disables kerning with `font-feature-settings: "liga" 1, "kern" 0;`. This is load-bearing for glyph alignment: `puzzle.js` relies on canvas text measurement matching browser layout closely enough when reconstructing text positions.
 
 Reduced-motion support is intentional and should be preserved.
@@ -143,7 +147,7 @@ A good refactor here should:
 ## Suggested smoke checks for any cleanup
 
 - Serve repo locally with `python3 -m http.server`.
-- Open `index.html`, `research.html`, `contact.html`, `MPCNC.html`, and `consulting.html`.
+- Open `index.html`, `research.html`, and `contact.html`.
 - Confirm local links resolve.
 - Confirm header/social layout does not overlap at desktop and narrow widths.
 - Confirm homepage puzzle starts from the `puzzle` link.

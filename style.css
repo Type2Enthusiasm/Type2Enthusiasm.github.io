@@ -192,7 +192,6 @@ main{ font-feature-settings: "liga" 1, "kern" 0; }
 
 [data-puzzle-walls][data-puzzle-reveal-layout="locked"]{
   min-height:var(--puzzle-reveal-min-height);
-  transition:min-height 620ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 /* Heading sizes with thin weight */
@@ -246,9 +245,6 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
   font-family: var(--font-heading);
   font-weight: 300;  /* slightly stronger than section heads */
 }
-
-/* Badges/helpers */
-.badge{ font-size:.75rem; border:1px solid var(--hairline); padding:.15rem .4rem; border-radius:.35rem; color:var(--muted) }
 
 /* Social */
 .social{ display:flex; gap:.75rem; flex-wrap:wrap; margin-top:.75rem }
@@ -411,10 +407,8 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
 }
 
 @media (prefers-reduced-motion: reduce){
-  .site-header,
   .site-header::after,
   .puzzle-separator,
-  [data-puzzle-walls][data-puzzle-reveal-layout="locked"],
   .puzzle-quote-stack.puzzle-quote-stack--floaty li{
     animation:none !important;
   }
@@ -478,10 +472,6 @@ footer{
   z-index:31;
 }
 
-.puzzle-glyph-layer.is-active{
-  display:block;
-}
-
 .puzzle-glyph-layer[hidden]{
   display:none !important;
 }
@@ -541,35 +531,6 @@ footer{
 .puzzle-reset:focus-visible{
   outline:2px solid var(--link);
   outline-offset:2px;
-}
-
-.visually-hidden{
-  position:absolute;
-  width:1px;
-  height:1px;
-  padding:0;
-  margin:-1px;
-  overflow:hidden;
-  clip:rect(0, 0, 0, 0);
-  white-space:nowrap;
-  border:0;
-}
-
-.visually-hidden:focus,
-.visually-hidden:focus-visible{
-  clip:auto;
-  width:auto;
-  height:auto;
-  margin:0;
-  overflow:visible;
-  white-space:normal;
-  left:1rem;
-  top:1rem;
-  padding:.5rem .75rem;
-  background:rgba(255, 250, 246, 0.98);
-  border:1px solid var(--hairline);
-  border-radius:var(--radius);
-  z-index:40;
 }
 
 [data-puzzle-hidden]{
