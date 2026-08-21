@@ -98,7 +98,7 @@ These are real concepts, not arbitrary helper slices. If the module is split, us
 
 The puzzle uses viewport coordinates because the glyph layer is `position: fixed; inset: 0`. This matters for drag math, collision math, scroll locking, and resize behavior.
 
-After solve, the header line falls with a kinematic tween (not Verlet). Original puzzle copy is collapsed out of flow when the reward card unhides, with walls min-height locked so the footer does not jump. `data-puzzle-revealed="true"` is set only after the quote entrance animation finishes; that marker unlocks floaty quote CSS and full-opacity fallbacks.
+After solve, the header line falls with a kinematic tween (not Verlet). Original puzzle copy is collapsed out of flow when the reward card unhides, with walls min-height locked so the footer does not jump. The reward fades in as one section (quotes with the card). `data-puzzle-revealed="true"` is set after that fade and unlocks a slow out-of-phase hang plus hover/focus reading-lamp on the quote list.
 
 `main` currently disables kerning with `font-feature-settings: "liga" 1, "kern" 0;`. This is load-bearing for glyph alignment: `puzzle.js` relies on canvas text measurement matching browser layout closely enough when reconstructing text positions.
 

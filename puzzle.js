@@ -111,26 +111,19 @@ const TEXT_STYLE_KEYS = [
 
 /** @type {readonly PuzzleQuoteRow[]} */
 const PUZZLE_QUOTES = [
+  { id: "rza-inspiration", quote: "Inspiration is found everywhere if you look hard enough.", author: "RZA" },
   { id: "aristotle-educated-mind", quote: "It is the mark of an educated mind to entertain a thought without accepting it.", author: "Aristotle" },
   { id: "michelangelo-aim", quote: "The greatest danger for most of us is not that our aim is too high and we miss it, but that it is too low and we reach it.", author: "Michelangelo" },
   { id: "greek-proverb-trees", quote: "A society grows great when old men plant trees whose shade they know they shall never sit in.", author: "Greek proverb" },
   { id: "marczewski-choose", quote: "You can't wait till everything is good to be happy. You have to choose.", author: "Jane Marczewski" },
   { id: "godin-optimism", quote: "Optimism is the most important human trait, because it allows us to evolve our ideas, to improve our situation, and to hope for a better tomorrow.", author: "Seth Godin" },
-  { id: "immortal-technique-purpose", quote: "The purpose of life is a life with a purpose. So I'd rather die for a cause than live a life that is worthless.", author: "Immortal Technique" },
-  { id: "rza-inspiration", quote: "Inspiration is found everywhere if you look hard enough.", author: "RZA" }
+  { id: "immortal-technique-purpose", quote: "The purpose of life is a life with a purpose. So I'd rather die for a cause than live a life that is worthless.", author: "Immortal Technique" }
 ];
 
-/* Hold after unhide before the tile (card) starts to fade in. */
-const REWARD_TILE_APPEAR_DELAY_MS = 1650;
-/* Beat 1: only the card chrome (section box): opacity + tiny Y — not the quote text. */
-/* Beats 2–3: kicker / h2 / blockquote / hint, then list lines — each line’s own fade. */
-const REWARD_BEAT1_MS = 3000;
-const REWARD_ENTRANCE_MS = 3900;
-const REWARD_BEAT_GAP_MS = 360;
-const REWARD_BEAT2_STAGGER_MS = 210;
-const REWARD_BEAT3_STAGGER_MS = 150;
-const REWARD_REDUCE_MOTION_MS = 840;
-/** Even fade (avoids “fast then done” from strong ease-out on long durations). */
+/* Hold after unhide before the card fades in (glyphs already falling). */
+const REWARD_TILE_APPEAR_DELAY_MS = 1100;
+const REWARD_CARD_MS = 800;
+const REWARD_REDUCE_MOTION_MS = 280;
 const REWARD_EASE = "cubic-bezier(0.45, 0, 0.55, 1)";
 
 function boot() {
@@ -205,7 +198,7 @@ function initRewardContent(state) {
   }
   state.quoteStack.textContent = "";
   state.quoteStack.classList.add("puzzle-quote-stack--floaty");
-  for (const row of PUZZLE_QUOTES) {
+  PUZZLE_QUOTES.forEach((row, idx) => {
     const item = document.createElement("li");
     const quote = document.createElement("blockquote");
     quote.className = "puzzle-quote-card";
@@ -217,9 +210,10 @@ function initRewardContent(state) {
     quote.append(quoteText, author);
     item.appendChild(quote);
     item.dataset.quoteId = row.id;
+    item.style.setProperty("--quote-i", String(idx));
     item.tabIndex = 0;
     state.quoteStack.appendChild(item);
-  }
+  });
 }
 
 function bindEvents(state) {
@@ -762,7 +756,30 @@ function startUnravelAllScenes(state) {
   }
 }
 
+function parkRevealChrome(state) {
+  state.separatorDisplacement = 0;
+  state.separatorVelocity = 0;
+  if (state.separator) {
+    state.separator.style.transform = "";
+    state.separator.classList.remove("is-compressing");
+  }
+  if (state.ceiling) {
+    state.ceiling.style.removeProperty("--puzzle-ceiling-offset");
+    state.ceiling.style.removeProperty("--puzzle-ceiling-x-offset");
+    state.ceiling.style.removeProperty("--puzzle-ceiling-rotation");
+    state.ceiling.style.setProperty("--puzzle-ceiling-opacity", "0");
+    state.ceiling.classList.remove("is-compressing");
+  }
+}
+
 function syncLineVisuals(state) {
+  // Transforms on in-flow header/separator expand document height. Once the
+  // reward is showing, scroll is unlocked, so park those offsets.
+  if (state.rewardSweepEntranceDone) {
+    parkRevealChrome(state);
+    return;
+  }
+
   if (state.separator) {
     state.separator.style.transform = `translateY(${state.separatorDisplacement}px)`;
     state.separator.classList.toggle("is-compressing", state.separatorDisplacement > 1);
@@ -1312,7 +1329,7 @@ function clearSocialHintIcons(state) {
 }
 
 function updateBottomBarSpring(state, bottomBar) {
-  if (!bottomBar) {
+  if (!bottomBar || state.revealPhase !== "idle") {
     return;
   }
 
@@ -1498,25 +1515,13 @@ function moveUnlockedGlyphsOffscreen(state) {
 }
 
 function finishReveal(state) {
-  let preSwapHeight = 0;
-  if (state.walls) {
-    preSwapHeight = Math.ceil(state.walls.getBoundingClientRect().height);
-  }
   state.revealPhase = "revealed";
   state.revealTicks = 0;
   const restoreY = unlockRevealScroll(state);
-  if (state.walls && preSwapHeight > 0) {
-    if (state.revealLayoutTimer) {
-      window.clearTimeout(state.revealLayoutTimer);
-      state.revealLayoutTimer = 0;
-    }
-    state.walls.style.setProperty("--puzzle-reveal-min-height", `${preSwapHeight}px`);
-    state.walls.dataset.puzzleRevealLayout = "locked";
-  }
   if (state.main) {
     state.main.dataset.puzzleStage = "revealed";
   }
-  settleRevealLayout(state, preSwapHeight);
+  settleRevealLayout(state);
   scrollRewardIntoView(state, restoreY);
 }
 
@@ -1597,21 +1602,26 @@ function lockRevealLayout(state) {
   state.walls.dataset.puzzleRevealLayout = "locked";
 }
 
-/* After finishReveal: keep min-height through reward entrance (see REWARD_* timing). */
-const REVEAL_FADE_SETTLE_MS = 16650;
+/* Hold walls min-height briefly after reward fade so the footer does not jump. */
+const REVEAL_FADE_SETTLE_MS = REWARD_CARD_MS + 200;
 
-function settleRevealLayout(state, preSwapHeight) {
+function lockWallsToRewardHeight(state) {
+  if (!state.walls || !state.reward || state.reward.hidden) {
+    return;
+  }
+  const height = Math.ceil(state.reward.getBoundingClientRect().height);
+  state.walls.style.setProperty("--puzzle-reveal-min-height", `${height}px`);
+  state.walls.dataset.puzzleRevealLayout = "locked";
+}
+
+function settleRevealLayout(state) {
   if (!state.walls || !state.reward) {
     clearRevealLayout(state);
     return;
   }
 
   window.requestAnimationFrame(() => {
-    const rewardBlock = Math.ceil(state.reward.getBoundingClientRect().height + 32);
-    const pre = preSwapHeight > 0 ? preSwapHeight : 0;
-    const height = Math.max(rewardBlock, pre);
-    state.walls.style.setProperty("--puzzle-reveal-min-height", `${height}px`);
-    state.walls.dataset.puzzleRevealLayout = "locked";
+    lockWallsToRewardHeight(state);
     const delay = prefersReducedMotion() ? 0 : REVEAL_FADE_SETTLE_MS;
     state.revealLayoutTimer = window.setTimeout(() => {
       clearRevealLayout(state);
@@ -2002,21 +2012,6 @@ function cancelRewardAnimations(state) {
   state.rewardAnimations = [];
 }
 
-function clearRewardEntranceStyles(rewardRoot) {
-  if (!rewardRoot) {
-    return;
-  }
-  rewardRoot.style.removeProperty("opacity");
-  rewardRoot.style.removeProperty("transform");
-  const nodes = rewardRoot.querySelectorAll(
-    ".puzzle-reward-kicker, .puzzle-reward > h2, .puzzle-reward-hint, .puzzle-quote-stack li"
-  );
-  for (const el of nodes) {
-    el.style.removeProperty("opacity");
-    el.style.removeProperty("transform");
-  }
-}
-
 function pushRewardAnim(state, anim) {
   if (!state.rewardAnimations) {
     state.rewardAnimations = [];
@@ -2024,20 +2019,28 @@ function pushRewardAnim(state, anim) {
   state.rewardAnimations.push(anim);
 }
 
-/** Collapse original copy into reserved height, then unhide the reward card. */
-function swapPuzzleCopyForReward(state) {
-  if (!state.walls) {
+function clearRewardEntranceStyles(rewardRoot) {
+  if (!rewardRoot) {
     return;
   }
-  const height = Math.ceil(state.walls.getBoundingClientRect().height);
-  state.walls.style.setProperty("--puzzle-reveal-min-height", `${height}px`);
-  state.walls.dataset.puzzleRevealLayout = "locked";
+  rewardRoot.style.removeProperty("opacity");
+  rewardRoot.style.removeProperty("transform");
+  delete rewardRoot.dataset.puzzleEnter;
+}
+
+function rewardEntranceStillLive(state) {
+  return Boolean(state.reward && !state.reward.hidden && state.rewardSweepEntranceDone);
+}
+
+/** Collapse original copy; drop the intro min-height lock. */
+function swapPuzzleCopyForReward(state) {
+  clearRevealLayout(state);
   if (state.main) {
     state.main.dataset.puzzleStage = "revealed";
   }
 }
 
-/** Runs when unravel finishes and sweeping begins — quotes fade while glyphs still fall. */
+/** Runs when unravel finishes and sweeping begins — whole card fades while glyphs fall. */
 function beginRewardEntrance(state) {
   if (!state.reward || state.rewardSweepEntranceDone) {
     return;
@@ -2047,111 +2050,81 @@ function beginRewardEntrance(state) {
 
   cancelRewardAnimations(state);
   swapPuzzleCopyForReward(state);
+  parkRevealChrome(state);
+
+  const r = state.reward;
+  delete r.dataset.puzzleRevealed;
+  r.dataset.puzzleEnter = "prep";
+  r.style.opacity = "0";
+  r.style.transform = "translateY(6px)";
+  r.hidden = false;
+  r.setAttribute("aria-busy", "true");
+  void r.offsetHeight;
+
+  // Allow scrolling as soon as the reward is on screen (sweep may still run).
+  unlockRevealScroll(state);
+  lockWallsToRewardHeight(state);
 
   const reduceMotion = prefersReducedMotion();
-  state.reward.style.opacity = "0";
-  state.reward.style.transform = reduceMotion ? "translateY(0)" : "translateY(5px)";
-  state.reward.hidden = false;
-  state.reward.setAttribute("aria-busy", "true");
 
-  window.requestAnimationFrame(() => {
-    if (!state.reward || state.reward.hidden || !state.rewardSweepEntranceDone) {
-      return;
-    }
-
-    const r = state.reward;
-    const kicker = r.querySelector(".puzzle-reward-kicker");
-    const heading = r.querySelector("h2");
-    const hint = r.querySelector(".puzzle-reward-hint");
-    const lis = [...r.querySelectorAll(".puzzle-quote-stack li")];
-    const headEls = [kicker, heading, hint].filter(
-      (el) => el instanceof Element
-    );
-
-    const run = async () => {
-      const textFade = [
-        { opacity: 0, transform: "translateY(2px)" },
-        { opacity: 1, transform: "translateY(0)" }
-      ];
-      try {
-        if (reduceMotion) {
-          const o = r.animate([{ opacity: 0 }, { opacity: 1 }], {
-            delay: REWARD_TILE_APPEAR_DELAY_MS,
-            duration: REWARD_REDUCE_MOTION_MS,
-            easing: REWARD_EASE,
-            fill: "forwards"
-          });
-          pushRewardAnim(state, o);
-          await o.finished;
-          for (const el of [...headEls, ...lis]) {
-            el.style.opacity = "1";
-            el.style.transform = "translateY(0)";
-          }
+  const run = async () => {
+    try {
+      if (!reduceMotion) {
+        await delayReward(state, REWARD_TILE_APPEAR_DELAY_MS);
+        if (!rewardEntranceStillLive(state)) {
           return;
         }
-
-        await delayReward(state, REWARD_TILE_APPEAR_DELAY_MS);
-
-        const boxAnim = r.animate(
-          [
-            { opacity: 0, transform: "translateY(5px)" },
-            { opacity: 1, transform: "translateY(0)" }
-          ],
-          { duration: REWARD_BEAT1_MS, easing: REWARD_EASE, fill: "forwards" }
-        );
-        pushRewardAnim(state, boxAnim);
-        await boxAnim.finished;
-
-        const headAnims = headEls.map((el, idx) => {
-          const a = el.animate(textFade, {
-            duration: REWARD_ENTRANCE_MS,
-            delay: idx * REWARD_BEAT2_STAGGER_MS,
-            easing: REWARD_EASE,
-            fill: "forwards"
-          });
-          pushRewardAnim(state, a);
-          return a;
-        });
-        if (headAnims.length) {
-          await Promise.all(headAnims.map((a) => a.finished));
-        }
-
-        await delayReward(state, REWARD_BEAT_GAP_MS);
-
-        const listAnims = lis.map((el, idx) => {
-          const a = el.animate(textFade, {
-            duration: REWARD_ENTRANCE_MS,
-            delay: idx * REWARD_BEAT3_STAGGER_MS,
-            easing: REWARD_EASE,
-            fill: "forwards"
-          });
-          pushRewardAnim(state, a);
-          return a;
-        });
-        if (listAnims.length) {
-          await Promise.all(listAnims.map((a) => a.finished));
-        }
-      } catch {
-        // e.g. animation or delay cancelled on reset
-      } finally {
-        if (state.reward && !state.reward.hidden && state.rewardSweepEntranceDone) {
-          state.reward.removeAttribute("aria-busy");
-          completeRewardReveal(state);
-        }
       }
-    };
 
-    void run();
-  });
+      const duration = reduceMotion ? REWARD_REDUCE_MOTION_MS : REWARD_CARD_MS;
+      const cardAnim = r.animate(
+        [
+          { opacity: 0, transform: reduceMotion ? "none" : "translateY(6px)" },
+          { opacity: 1, transform: "none" }
+        ],
+        {
+          duration,
+          easing: reduceMotion ? "linear" : REWARD_EASE,
+          fill: "forwards"
+        }
+      );
+      pushRewardAnim(state, cardAnim);
+      await cardAnim.finished;
+      if (!rewardEntranceStillLive(state)) {
+        return;
+      }
+      try {
+        cardAnim.commitStyles?.();
+      } catch (_) {
+        // ignore
+      }
+      try {
+        cardAnim.cancel();
+      } catch (_) {
+        // ignore
+      }
+
+      r.removeAttribute("aria-busy");
+      completeRewardReveal(state);
+      settleRevealLayout(state);
+    } catch {
+      // cancelled on reset
+    }
+  };
+
+  void run();
 }
 
-/** Marks entrance finished so floaty CSS and full opacity can take over. */
+/** Marks entrance finished so floaty CSS and reading focus can take over. */
 function completeRewardReveal(state) {
   if (!state.reward) {
     return;
   }
   state.rewardUnlocked = true;
   clearSocialHintIcons(state);
+  delete state.reward.dataset.puzzleEnter;
+  state.reward.style.removeProperty("opacity");
+  state.reward.style.removeProperty("transform");
   state.reward.dataset.puzzleRevealed = "true";
 }
 
@@ -2164,6 +2137,7 @@ function hideReward(state) {
   state.rewardSweepEntranceDone = false;
   state.reward.hidden = true;
   delete state.reward.dataset.puzzleRevealed;
+  delete state.reward.dataset.puzzleEnter;
   state.reward.removeAttribute("aria-busy");
 }
 
