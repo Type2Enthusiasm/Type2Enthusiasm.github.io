@@ -530,22 +530,33 @@ function buildElementScene(el, glyphLayer) {
     restLengths.push(dist * PHYSICS.constraintStretch);
   }
 
-  // Opt-in droop behavior: only the last 4 letters sag; the rest stay locked
-  // as normal anchors. We give the tail a small initial offset and let the
-  // constraint solver settle the chain into a tiny visible droop. constraintStretch
-  // already provides a few percent of slack per link, which is enough for a
-  // gentle hang without yanking the tail back onto the line.
+  // Opt-in droop: unlock a short free end so the chain settles into a visible
+  // sag. "start" sags the string head (first visual line); default/"tail" sags
+  // the string end. constraintStretch gives enough slack for a gentle hang.
   if (el.hasAttribute("data-puzzle-drop") && letters.length > 1) {
     const droopCount = Math.min(4, letters.length - 1);
-    const tailStart = letters.length - droopCount;
-    for (let si = tailStart; si < letters.length; si++) {
-      const letter = letters[si];
-      const sag = (si - tailStart + 1) * PHYSICS.tailSagStep;
-      letter.locked = false;
-      letter.x = letter.ox;
-      letter.y = letter.oy + sag;
-      letter.px = letter.ox;
-      letter.py = letter.y - Math.max(1, sag * 0.85);
+    const dropMode = el.dataset.puzzleDrop === "start" ? "start" : "tail";
+    if (dropMode === "start") {
+      for (let si = 0; si < droopCount; si++) {
+        const letter = letters[si];
+        const sag = (droopCount - si) * PHYSICS.tailSagStep;
+        letter.locked = false;
+        letter.x = letter.ox;
+        letter.y = letter.oy + sag;
+        letter.px = letter.ox;
+        letter.py = letter.y - Math.max(1, sag * 0.85);
+      }
+    } else {
+      const tailStart = letters.length - droopCount;
+      for (let si = tailStart; si < letters.length; si++) {
+        const letter = letters[si];
+        const sag = (si - tailStart + 1) * PHYSICS.tailSagStep;
+        letter.locked = false;
+        letter.x = letter.ox;
+        letter.y = letter.oy + sag;
+        letter.px = letter.ox;
+        letter.py = letter.y - Math.max(1, sag * 0.85);
+      }
     }
   }
 
@@ -1091,6 +1102,13 @@ function simulate(state) {
 
   updateBottomBarSpring(state, bottomBar);
   updateTopBarSpringAndSnap(state, topBar);
+  if (!state.topLineSnapped) {
+    updateSocialHintIcons(
+      state,
+      getBarSocialHits(state.scenes, bottomBar),
+      getBarSocialHits(state.scenes, topBar)
+    );
+  }
   updateSnappedTopLine(state);
   updateRevealSequence(state);
 }
@@ -1296,7 +1314,7 @@ function isTopBarFaceContact(letter, bar) {
   return Math.abs((letter.y + letter.h) - bar.top) <= contactSlop;
 }
 
-function getTopBarSocialHits(scenes, bar) {
+function getBarSocialHits(scenes, bar) {
   const hits = new Set();
   if (!bar) {
     return hits;
@@ -1315,17 +1333,22 @@ function getTopBarSocialHits(scenes, bar) {
   return hits;
 }
 
-function updateSocialHintIcons(state, activeKeys) {
+function updateSocialHintIcons(state, floorKeys, ceilingKeys) {
   if (!state.socialHintIcons) {
     return;
   }
+  const floor = floorKeys || new Set();
+  const ceiling = ceilingKeys || new Set();
   for (const [key, icon] of state.socialHintIcons.entries()) {
-    icon.classList.toggle("is-puzzle-top-hit", activeKeys.has(key));
+    const onCeiling = ceiling.has(key);
+    const onFloor = !onCeiling && floor.has(key);
+    icon.classList.toggle("is-puzzle-floor-hit", onFloor);
+    icon.classList.toggle("is-puzzle-ceiling-hit", onCeiling);
   }
 }
 
 function clearSocialHintIcons(state) {
-  updateSocialHintIcons(state, new Set());
+  updateSocialHintIcons(state, new Set(), new Set());
 }
 
 function updateBottomBarSpring(state, bottomBar) {
@@ -1349,8 +1372,6 @@ function updateTopBarSpringAndSnap(state, topBar) {
     clearSocialHintIcons(state);
     return;
   }
-
-  updateSocialHintIcons(state, getTopBarSocialHits(state.scenes, topBar));
 
   const load = getTopFaceLoad(state.scenes, topBar, false);
   const weight = load.count * PHYSICS.ceilingGlyphMass * PHYSICS.gravity;

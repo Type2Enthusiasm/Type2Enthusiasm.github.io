@@ -150,12 +150,21 @@ body.puzzle-scroll-lock{
   border-color:var(--accent-hover);
 }
 
-.site-social a.is-puzzle-top-hit{
+.site-social a.is-puzzle-floor-hit{
   color:var(--accent-hover);
   border-color:color-mix(in oklab, var(--hairline) 35%, var(--accent));
   background:color-mix(in oklab, var(--bg) 86%, var(--accent) 10%);
   box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent),
              0 8px 22px -14px color-mix(in oklab, var(--accent) 65%, transparent);
+  animation:puzzle-social-float 1.8s ease-in-out infinite;
+}
+
+.site-social a.is-puzzle-ceiling-hit{
+  color:color-mix(in oklab, #3f5a3a 72%, var(--text));
+  border-color:color-mix(in oklab, var(--hairline) 28%, #4a6b3f);
+  background:color-mix(in oklab, var(--bg) 80%, #4a6b3f 20%);
+  box-shadow:0 0 0 3px color-mix(in oklab, #4a6b3f 22%, transparent),
+             0 8px 22px -14px color-mix(in oklab, #4a6b3f 70%, transparent);
   animation:puzzle-social-float 1.8s ease-in-out infinite;
 }
 
@@ -175,7 +184,8 @@ body.puzzle-scroll-lock{
 }
 
 @media (prefers-reduced-motion: reduce){
-  .site-social a.is-puzzle-top-hit{
+  .site-social a.is-puzzle-floor-hit,
+  .site-social a.is-puzzle-ceiling-hit{
     animation:none;
   }
 }

@@ -70,14 +70,24 @@ Current puzzle/page contract:
 - `[data-puzzle-trigger]` starts the puzzle.
 - `[data-puzzle-walls]` wraps all puzzle runs.
 - `[data-puzzle-run]` marks text whose layout should be converted into glyph scenes.
-- `[data-puzzle-drop]` marks a run whose tail begins slightly sagged.
+- `[data-puzzle-drop]` marks a run whose free end begins slightly sagged (`"start"` = string head, default/`"tail"` = string end).
 - `[data-puzzle-social-run]` associates a text run with a social icon hint.
-- `[data-puzzle-social-icon]` marks a header social icon that can highlight during solve hints.
+- `[data-puzzle-social-icon]` marks a header social icon that glows oxblood on footer contact and olive on header contact.
 - `[data-puzzle-glyph-layer]` receives generated glyph spans.
 - `[data-puzzle-reset]` exits/reset the puzzle.
 - `[data-puzzle-reward]` and `[data-puzzle-quote-stack]` render the solved reward.
 
 Only `index.html` currently satisfies this full contract and loads `puzzle.js`. Homepage copy should describe the puzzle as homepage-only unless other pages are deliberately wired as puzzle host pages.
+
+### Puzzle discovery hints
+
+The win condition (hang glyphs on the header line until it snaps) is taught diegetically, not with a tutorial:
+
+1. **LinkedIn tail sag** — the LinkedIn social run uses `[data-puzzle-drop]` so its tail starts slightly unlocked. That shows letters can hang.
+2. **Floor glow (oxblood)** — when a social string rests on the footer separator, the matching header icon gets `.is-puzzle-floor-hit`. That shows the bottom hairline is physical and maps word → icon.
+3. **Ceiling glow (muted olive)** — when that string rests on the header line, the same icon switches to `.is-puzzle-ceiling-hit`. Ceiling wins over floor. That shows the top hairline is the goal.
+
+There is no activate twitch. Header social-icon glow is the discovery hint, not a post-solve confirmation.
 
 ## Puzzle implementation notes
 
