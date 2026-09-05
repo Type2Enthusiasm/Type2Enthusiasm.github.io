@@ -86,6 +86,7 @@ The win condition (hang glyphs on the header line until it snaps) is taught dieg
 1. **LinkedIn tail sag** — the LinkedIn social run uses `[data-puzzle-drop]` so its tail starts slightly unlocked. That shows letters can hang.
 2. **Floor glow (oxblood)** — when a social string rests on the footer separator, the matching header icon gets `.is-puzzle-floor-hit`. That shows the bottom hairline is physical and maps word → icon.
 3. **Ceiling glow (muted olive)** — when that string rests on the header line, the same icon switches to `.is-puzzle-ceiling-hit`. Ceiling wins over floor. That shows the top hairline is the goal.
+4. **All-red cue** — when every social icon is oxblood and none are olive, fire a one-shot wrong-bar hint: icons flash olive twice via a single `.is-puzzle-wrong-bar-hint` CSS keyframe. Re-arms only after the all-red set breaks. Under `prefers-reduced-motion`, icons use two stepped olive holds (`.is-puzzle-wrong-bar-olive`) instead of continuous animation.
 
 There is no activate twitch. Header social-icon glow is the discovery hint, not a post-solve confirmation.
 

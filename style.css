@@ -168,6 +168,40 @@ body.puzzle-scroll-lock{
   animation:puzzle-social-float 1.8s ease-in-out infinite;
 }
 
+.site-social a.is-puzzle-floor-hit.is-puzzle-wrong-bar-hint{
+  /* Kill the base 180ms color transition so olive pulses stay crisp. */
+  transition:none;
+  /* Two olive peaks in ONE 1.2s run (iteration 1). Layered with float so we
+     do not yank an in-flight infinite animation (Chromium drops cycles). */
+  animation:
+    puzzle-social-float 1.8s ease-in-out infinite,
+    puzzle-wrong-bar-flash 1.2s ease-in-out 1;
+}
+
+@keyframes puzzle-wrong-bar-flash{
+  0%, 18%, 48%, 78%, 100%{
+    color:var(--accent-hover);
+    border-color:color-mix(in oklab, var(--hairline) 35%, var(--accent));
+    background:color-mix(in oklab, var(--bg) 86%, var(--accent) 10%);
+    box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent),
+               0 8px 22px -14px color-mix(in oklab, var(--accent) 65%, transparent);
+  }
+  28%, 38%{
+    color:color-mix(in oklab, #3f5a3a 72%, var(--text));
+    border-color:color-mix(in oklab, var(--hairline) 28%, #4a6b3f);
+    background:color-mix(in oklab, var(--bg) 80%, #4a6b3f 20%);
+    box-shadow:0 0 0 3px color-mix(in oklab, #4a6b3f 22%, transparent),
+               0 8px 22px -14px color-mix(in oklab, #4a6b3f 70%, transparent);
+  }
+  58%, 68%{
+    color:color-mix(in oklab, #3f5a3a 72%, var(--text));
+    border-color:color-mix(in oklab, var(--hairline) 28%, #4a6b3f);
+    background:color-mix(in oklab, var(--bg) 80%, #4a6b3f 20%);
+    box-shadow:0 0 0 3px color-mix(in oklab, #4a6b3f 22%, transparent),
+               0 8px 22px -14px color-mix(in oklab, #4a6b3f 70%, transparent);
+  }
+}
+
 @keyframes puzzle-social-float{
   0%, 100%{ transform:translateY(0); }
   50%{ transform:translateY(-2px); }
@@ -185,8 +219,18 @@ body.puzzle-scroll-lock{
 
 @media (prefers-reduced-motion: reduce){
   .site-social a.is-puzzle-floor-hit,
-  .site-social a.is-puzzle-ceiling-hit{
+  .site-social a.is-puzzle-ceiling-hit,
+  .site-social a.is-puzzle-floor-hit.is-puzzle-wrong-bar-hint{
     animation:none;
+  }
+  /* Stepped olive holds via JS toggle of .is-puzzle-wrong-bar-olive (no continuous motion). */
+  .site-social a.is-puzzle-floor-hit.is-puzzle-wrong-bar-olive{
+    transition:none;
+    color:color-mix(in oklab, #3f5a3a 72%, var(--text));
+    border-color:color-mix(in oklab, var(--hairline) 28%, #4a6b3f);
+    background:color-mix(in oklab, var(--bg) 80%, #4a6b3f 20%);
+    box-shadow:0 0 0 3px color-mix(in oklab, #4a6b3f 22%, transparent),
+               0 8px 22px -14px color-mix(in oklab, #4a6b3f 70%, transparent);
   }
 }
 

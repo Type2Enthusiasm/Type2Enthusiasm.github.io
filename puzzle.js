@@ -50,6 +50,11 @@ const PHYSICS = {
   ceilingSolveDisplacement: 14,
   // Consecutive simulation ticks above threshold before reveal.
   ceilingSolveHoldTicks: 20,
+  // One-shot wrong-bar cue: all social icons oxblood on the footer.
+  // Matches CSS: puzzle-wrong-bar-flash 1.2s at 120 Hz.
+  wrongBarHintMaxTicks: 144,
+  // Reduced-motion: two stepped olive holds across ~1.0s.
+  wrongBarHintReducedTicks: 120,
   // Invisible body thickness around each 1px line.
   lineCollisionThickness: 6,
   // Open-end clearance so words can route around line ends.
@@ -181,6 +186,9 @@ function boot() {
     rewardAnimations: [],
     rewardTimeouts: [],
     socialHintIcons,
+    wrongBarHintReady: true,
+    wrongBarHintActive: false,
+    wrongBarHintTicks: 0,
     smoothedLineNudgeY: 0
   };
 
@@ -294,6 +302,8 @@ function resetPuzzle(state) {
   state.rewardUnlocked = false;
   state.rewardSweepEntranceDone = false;
   state.smoothedLineNudgeY = 0;
+  clearWrongBarHint(state);
+  state.wrongBarHintReady = true;
   if (state.separator) {
     state.separator.style.transform = "";
     state.separator.classList.remove("is-compressing");
@@ -709,7 +719,22 @@ function tick(state, now) {
   const idleCeiling = Math.abs(state.ceilingVelocity) < 0.01 && state.ceilingDisplacement === 0;
   const idleSnappedLine = !state.snappedTopLine || state.snappedTopLine.sleeping;
   const idleReveal = state.revealPhase === "idle" || state.revealPhase === "revealed";
-  if (allSleeping && state.drags.size === 0 && idleSeparator && idleCeiling && idleSnappedLine && idleReveal) {
+  const pendingWrongBarHint =
+    state.wrongBarHintReady &&
+    !state.wrongBarHintActive &&
+    !state.topLineSnapped &&
+    state.revealPhase === "idle" &&
+    isAllRedSocialHint(state);
+  if (
+    allSleeping &&
+    state.drags.size === 0 &&
+    idleSeparator &&
+    idleCeiling &&
+    idleSnappedLine &&
+    idleReveal &&
+    !state.wrongBarHintActive &&
+    !pendingWrongBarHint
+  ) {
     state.accumulator = 0;
     state.rafId = requestAnimationFrame((time) => tick(state, time));
     return;
@@ -1103,11 +1128,10 @@ function simulate(state) {
   updateBottomBarSpring(state, bottomBar);
   updateTopBarSpringAndSnap(state, topBar);
   if (!state.topLineSnapped) {
-    updateSocialHintIcons(
-      state,
-      getBarSocialHits(state.scenes, bottomBar),
-      getBarSocialHits(state.scenes, topBar)
-    );
+    const floorKeys = getBarSocialHits(state.scenes, bottomBar);
+    const ceilingKeys = getBarSocialHits(state.scenes, topBar);
+    updateSocialHintIcons(state, floorKeys, ceilingKeys);
+    updateWrongBarHint(state, floorKeys, ceilingKeys);
   }
   updateSnappedTopLine(state);
   updateRevealSequence(state);
@@ -1337,6 +1361,11 @@ function updateSocialHintIcons(state, floorKeys, ceilingKeys) {
   if (!state.socialHintIcons) {
     return;
   }
+  // Freeze oxblood/olive classes while the wrong-bar cue runs so a single-tick
+  // contact loss cannot cancel the CSS flash mid-pulse.
+  if (state.wrongBarHintActive) {
+    return;
+  }
   const floor = floorKeys || new Set();
   const ceiling = ceilingKeys || new Set();
   for (const [key, icon] of state.socialHintIcons.entries()) {
@@ -1349,6 +1378,107 @@ function updateSocialHintIcons(state, floorKeys, ceilingKeys) {
 
 function clearSocialHintIcons(state) {
   updateSocialHintIcons(state, new Set(), new Set());
+  clearWrongBarHint(state);
+}
+
+function allFloorIconsLit(state, floorKeys, ceilingKeys) {
+  if (!state.socialHintIcons?.size) {
+    return false;
+  }
+  if (ceilingKeys.size) {
+    return false;
+  }
+  for (const key of state.socialHintIcons.keys()) {
+    if (!floorKeys.has(key)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function setWrongBarHintIcons(state, on) {
+  if (!state.socialHintIcons) {
+    return;
+  }
+  for (const icon of state.socialHintIcons.values()) {
+    icon.classList.toggle("is-puzzle-wrong-bar-hint", on);
+  }
+}
+
+function setWrongBarOliveStep(state, on) {
+  if (!state.socialHintIcons) {
+    return;
+  }
+  for (const icon of state.socialHintIcons.values()) {
+    icon.classList.toggle("is-puzzle-wrong-bar-olive", on);
+  }
+}
+
+function clearWrongBarHint(state) {
+  state.wrongBarHintActive = false;
+  state.wrongBarHintTicks = 0;
+  setWrongBarHintIcons(state, false);
+  setWrongBarOliveStep(state, false);
+}
+
+function startWrongBarHint(state) {
+  state.wrongBarHintReady = false;
+  state.wrongBarHintActive = true;
+  state.wrongBarHintTicks = 0;
+  setWrongBarHintIcons(state, true);
+  setWrongBarOliveStep(state, false);
+}
+
+function isAllRedSocialHint(state) {
+  if (!state.socialHintIcons?.size || state.topLineSnapped) {
+    return false;
+  }
+  const topBar = buildAttachedTopBar(state);
+  const bottomBar = buildAttachedBottomBar(state);
+  const floorKeys = getBarSocialHits(state.scenes, bottomBar);
+  const ceilingKeys = getBarSocialHits(state.scenes, topBar);
+  return allFloorIconsLit(state, floorKeys, ceilingKeys);
+}
+
+function updateWrongBarHint(state, floorKeys, ceilingKeys) {
+  if (state.topLineSnapped || state.revealPhase !== "idle") {
+    clearWrongBarHint(state);
+    return;
+  }
+
+  const allRed = allFloorIconsLit(state, floorKeys, ceilingKeys);
+
+  if (!state.wrongBarHintActive) {
+    if (!allRed) {
+      // Re-arm only after the all-red set breaks (and the prior cue has finished).
+      state.wrongBarHintReady = true;
+      return;
+    }
+    if (!state.wrongBarHintReady) {
+      return;
+    }
+    startWrongBarHint(state);
+  }
+
+  // Once started, run the full cue even if a string briefly loses footer contact.
+  state.wrongBarHintTicks += 1;
+  const reduce = prefersReducedMotion();
+  const maxTicks = reduce ? PHYSICS.wrongBarHintReducedTicks : PHYSICS.wrongBarHintMaxTicks;
+
+  if (reduce) {
+    // Two stepped olive holds: ticks 1–24 and 49–72 across ~1.0s.
+    const t = state.wrongBarHintTicks;
+    const olive = (t >= 1 && t <= 24) || (t >= 49 && t <= 72);
+    setWrongBarOliveStep(state, olive);
+  }
+
+  if (state.wrongBarHintTicks >= maxTicks) {
+    clearWrongBarHint(state);
+    // Stay disarmed while still all-red so the cue stays one-shot per hold.
+    if (!allRed) {
+      state.wrongBarHintReady = true;
+    }
+  }
 }
 
 function updateBottomBarSpring(state, bottomBar) {
