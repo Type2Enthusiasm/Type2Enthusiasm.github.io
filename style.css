@@ -150,13 +150,56 @@ body.puzzle-scroll-lock{
   border-color:var(--accent-hover);
 }
 
-.site-social a.is-puzzle-top-hit{
+.site-social a.is-puzzle-floor-hit{
   color:var(--accent-hover);
   border-color:color-mix(in oklab, var(--hairline) 35%, var(--accent));
   background:color-mix(in oklab, var(--bg) 86%, var(--accent) 10%);
   box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent),
              0 8px 22px -14px color-mix(in oklab, var(--accent) 65%, transparent);
   animation:puzzle-social-float 1.8s ease-in-out infinite;
+}
+
+.site-social a.is-puzzle-ceiling-hit{
+  color:color-mix(in oklab, #3f5a3a 72%, var(--text));
+  border-color:color-mix(in oklab, var(--hairline) 28%, #4a6b3f);
+  background:color-mix(in oklab, var(--bg) 80%, #4a6b3f 20%);
+  box-shadow:0 0 0 3px color-mix(in oklab, #4a6b3f 22%, transparent),
+             0 8px 22px -14px color-mix(in oklab, #4a6b3f 70%, transparent);
+  animation:puzzle-social-float 1.8s ease-in-out infinite;
+}
+
+.site-social a.is-puzzle-floor-hit.is-puzzle-wrong-bar-hint{
+  /* Kill the base 180ms color transition so olive pulses stay crisp. */
+  transition:none;
+  /* Two olive peaks in ONE 1.2s run (iteration 1). Layered with float so we
+     do not yank an in-flight infinite animation (Chromium drops cycles). */
+  animation:
+    puzzle-social-float 1.8s ease-in-out infinite,
+    puzzle-wrong-bar-flash 1.2s ease-in-out 1;
+}
+
+@keyframes puzzle-wrong-bar-flash{
+  0%, 18%, 48%, 78%, 100%{
+    color:var(--accent-hover);
+    border-color:color-mix(in oklab, var(--hairline) 35%, var(--accent));
+    background:color-mix(in oklab, var(--bg) 86%, var(--accent) 10%);
+    box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent),
+               0 8px 22px -14px color-mix(in oklab, var(--accent) 65%, transparent);
+  }
+  28%, 38%{
+    color:color-mix(in oklab, #3f5a3a 72%, var(--text));
+    border-color:color-mix(in oklab, var(--hairline) 28%, #4a6b3f);
+    background:color-mix(in oklab, var(--bg) 80%, #4a6b3f 20%);
+    box-shadow:0 0 0 3px color-mix(in oklab, #4a6b3f 22%, transparent),
+               0 8px 22px -14px color-mix(in oklab, #4a6b3f 70%, transparent);
+  }
+  58%, 68%{
+    color:color-mix(in oklab, #3f5a3a 72%, var(--text));
+    border-color:color-mix(in oklab, var(--hairline) 28%, #4a6b3f);
+    background:color-mix(in oklab, var(--bg) 80%, #4a6b3f 20%);
+    box-shadow:0 0 0 3px color-mix(in oklab, #4a6b3f 22%, transparent),
+               0 8px 22px -14px color-mix(in oklab, #4a6b3f 70%, transparent);
+  }
 }
 
 @keyframes puzzle-social-float{
@@ -175,8 +218,19 @@ body.puzzle-scroll-lock{
 }
 
 @media (prefers-reduced-motion: reduce){
-  .site-social a.is-puzzle-top-hit{
+  .site-social a.is-puzzle-floor-hit,
+  .site-social a.is-puzzle-ceiling-hit,
+  .site-social a.is-puzzle-floor-hit.is-puzzle-wrong-bar-hint{
     animation:none;
+  }
+  /* Stepped olive holds via JS toggle of .is-puzzle-wrong-bar-olive (no continuous motion). */
+  .site-social a.is-puzzle-floor-hit.is-puzzle-wrong-bar-olive{
+    transition:none;
+    color:color-mix(in oklab, #3f5a3a 72%, var(--text));
+    border-color:color-mix(in oklab, var(--hairline) 28%, #4a6b3f);
+    background:color-mix(in oklab, var(--bg) 80%, #4a6b3f 20%);
+    box-shadow:0 0 0 3px color-mix(in oklab, #4a6b3f 22%, transparent),
+               0 8px 22px -14px color-mix(in oklab, #4a6b3f 70%, transparent);
   }
 }
 
@@ -192,7 +246,6 @@ main{ font-feature-settings: "liga" 1, "kern" 0; }
 
 [data-puzzle-walls][data-puzzle-reveal-layout="locked"]{
   min-height:var(--puzzle-reveal-min-height);
-  transition:min-height 620ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 /* Heading sizes with thin weight */
@@ -247,9 +300,6 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
   font-weight: 300;  /* slightly stronger than section heads */
 }
 
-/* Badges/helpers */
-.badge{ font-size:.75rem; border:1px solid var(--hairline); padding:.15rem .4rem; border-radius:.35rem; color:var(--muted) }
-
 /* Social */
 .social{ display:flex; gap:.75rem; flex-wrap:wrap; margin-top:.75rem }
 .social a:not(.btn){ display:inline-flex; align-items:center; gap:.4rem; color:var(--muted); text-decoration:none; border-bottom:1px dotted transparent }
@@ -284,6 +334,7 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
 }
 
 .puzzle-reward{
+  --reward-ease:cubic-bezier(0.45, 0, 0.55, 1);
   position:relative;
   z-index:32;
   margin:1.5rem 0 .75rem;
@@ -294,23 +345,19 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
   box-shadow:0 14px 30px -28px color-mix(in oklab, var(--text) 40%, transparent);
   opacity:1;
   transform:none;
+  transition:border-color 0.4s var(--reward-ease), box-shadow 0.4s var(--reward-ease);
 }
 
-/* Entrance uses Web Animations API in puzzle.js; keep static fallbacks below. */
-.puzzle-reward:not([data-puzzle-revealed="true"]) .puzzle-reward-kicker,
-.puzzle-reward:not([data-puzzle-revealed="true"]) > h2,
-.puzzle-reward:not([data-puzzle-revealed="true"]) .puzzle-reward-hint,
-.puzzle-reward:not([data-puzzle-revealed="true"]) .puzzle-quote-stack li{
+.puzzle-reward[data-puzzle-revealed="true"]{
+  border-color:color-mix(in oklab, var(--hairline) 55%, var(--accent));
+  box-shadow:0 18px 36px -24px color-mix(in oklab, var(--text) 45%, transparent);
+}
+
+/* Entrance: section opacity only (WAAPI in puzzle.js). Children fade with the card.
+   data-puzzle-revealed unlocks float + reading-lamp. */
+.puzzle-reward[data-puzzle-enter]{
   opacity:0;
-  transform:translateY(2px);
-}
-
-.puzzle-reward[data-puzzle-revealed="true"] .puzzle-reward-kicker,
-.puzzle-reward[data-puzzle-revealed="true"] > h2,
-.puzzle-reward[data-puzzle-revealed="true"] .puzzle-reward-hint,
-.puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack li{
-  opacity:1;
-  transform:translateY(0);
+  transform:translateY(6px);
 }
 
 .puzzle-reward[hidden]{
@@ -349,9 +396,9 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
   border:1px solid transparent;
   border-radius:0.4rem;
   box-shadow:0 0 0 0 color-mix(in oklab, var(--accent) 0%, transparent);
-  transition:box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  transition:box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, opacity 0.4s var(--reward-ease, cubic-bezier(0.45, 0, 0.55, 1));
   outline:none;
-  cursor:default;
+  cursor:pointer;
 }
 
 .puzzle-quote-card{
@@ -359,6 +406,7 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
   padding-left:.7rem;
   border-left:2px solid color-mix(in oklab, var(--hairline) 30%, var(--accent));
   color:color-mix(in oklab, var(--text) 88%, var(--muted));
+  transition:border-color 0.4s var(--reward-ease, cubic-bezier(0.45, 0, 0.55, 1)), transform 0.4s var(--reward-ease, cubic-bezier(0.45, 0, 0.55, 1));
 }
 
 .puzzle-quote-stack .puzzle-quote-text{
@@ -374,56 +422,63 @@ pre{ overflow:auto; background:var(--code-bg); padding:1rem; border-radius:var(-
   font-style:normal;
 }
 
-.puzzle-reward:not([hidden]) .puzzle-quote-stack li:hover{
+.puzzle-reward:not([hidden]) .puzzle-quote-stack li:hover,
+.puzzle-reward:not([hidden]) .puzzle-quote-stack li:focus-visible{
   background:color-mix(in oklab, var(--bg) 88%, var(--accent) 6%);
   border-color:color-mix(in oklab, var(--hairline) 50%, var(--accent));
   box-shadow:0 4px 18px -8px color-mix(in oklab, var(--text) 30%, transparent);
 }
 
 .puzzle-reward:not([hidden]) .puzzle-quote-stack li:focus-visible{
-  background:color-mix(in oklab, var(--bg) 88%, var(--accent) 6%);
-  border-color:color-mix(in oklab, var(--hairline) 50%, var(--accent));
-  box-shadow:0 4px 18px -8px color-mix(in oklab, var(--text) 30%, transparent);
   outline:2px solid var(--link);
   outline-offset:2px;
 }
 
+/* Reading lamp: works even when prefers-reduced-motion is reduce. */
+.puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack:hover li,
+.puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack:focus-within li{
+  opacity:0.35;
+}
+.puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack:hover li:hover,
+.puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack li:focus-visible{
+  opacity:1;
+}
+.puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack li:hover .puzzle-quote-card,
+.puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack li:focus-visible .puzzle-quote-card{
+  transform:translateY(-2px);
+  border-left-color:var(--accent);
+}
+
 @keyframes puzzle-quote-li-float{
   0%, 100%{ transform:translateY(0); }
-  50%{ transform:translateY(-2px); }
+  50%{ transform:translateY(-7px); }
 }
 
 @media (prefers-reduced-motion: no-preference){
-  /* Float only after reveal completes so WAA entrance is not overwritten. */
   .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li{
-    animation:puzzle-quote-li-float 7s ease-in-out infinite;
+    animation:puzzle-quote-li-float 6.5s ease-in-out infinite;
   }
   .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(1){ animation-delay:-0s; }
-  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(2){ animation-delay:-0.7s; }
-  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(3){ animation-delay:-1.4s; }
-  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(4){ animation-delay:-2.1s; }
-  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(5){ animation-delay:-2.8s; }
-  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(6){ animation-delay:-3.5s; }
+  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(2){ animation-delay:-0.65s; }
+  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(3){ animation-delay:-1.3s; }
+  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(4){ animation-delay:-1.95s; }
+  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(5){ animation-delay:-2.6s; }
+  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(6){ animation-delay:-3.25s; }
   .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(7),
   .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack.puzzle-quote-stack--floaty li:nth-child(n+8){
-    animation-delay:-4.2s;
+    animation-delay:-3.9s;
+  }
+  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack:hover li:hover,
+  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack li:focus-visible{
+    animation-play-state:paused;
   }
 }
 
 @media (prefers-reduced-motion: reduce){
-  .site-header,
   .site-header::after,
   .puzzle-separator,
-  [data-puzzle-walls][data-puzzle-reveal-layout="locked"],
   .puzzle-quote-stack.puzzle-quote-stack--floaty li{
     animation:none !important;
-  }
-  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-reward-kicker,
-  .puzzle-reward[data-puzzle-revealed="true"] > h2,
-  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-reward-hint,
-  .puzzle-reward[data-puzzle-revealed="true"] .puzzle-quote-stack li{
-    opacity:1;
-    transform:none;
   }
 }
 
@@ -471,39 +526,14 @@ footer{
 }
 
 /* ===== puzzle overlay ===== */
-.puzzle-overlay{
-  position:fixed;
-  inset:0;
-  width:100vw;
-  height:100vh;
-  pointer-events:none;
-  z-index:30;
-  touch-action:none;
-}
-
-.puzzle-overlay.is-active{
-  display:block;
-  pointer-events:auto;
-  cursor:grab;
-}
-
-.puzzle-overlay.is-active:active{
-  cursor:grabbing;
-}
-
-.puzzle-overlay[hidden]{
-  display:none !important;
-}
-
 .puzzle-glyph-layer{
   position:fixed;
   inset:0;
+  overflow:hidden;
+  overflow:clip;
+  contain:paint;
   pointer-events:none;
   z-index:31;
-}
-
-.puzzle-glyph-layer.is-active{
-  display:block;
 }
 
 .puzzle-glyph-layer[hidden]{
@@ -565,35 +595,6 @@ footer{
 .puzzle-reset:focus-visible{
   outline:2px solid var(--link);
   outline-offset:2px;
-}
-
-.visually-hidden{
-  position:absolute;
-  width:1px;
-  height:1px;
-  padding:0;
-  margin:-1px;
-  overflow:hidden;
-  clip:rect(0, 0, 0, 0);
-  white-space:nowrap;
-  border:0;
-}
-
-.visually-hidden:focus,
-.visually-hidden:focus-visible{
-  clip:auto;
-  width:auto;
-  height:auto;
-  margin:0;
-  overflow:visible;
-  white-space:normal;
-  left:1rem;
-  top:1rem;
-  padding:.5rem .75rem;
-  background:rgba(255, 250, 246, 0.98);
-  border:1px solid var(--hairline);
-  border-radius:var(--radius);
-  z-index:40;
 }
 
 [data-puzzle-hidden]{

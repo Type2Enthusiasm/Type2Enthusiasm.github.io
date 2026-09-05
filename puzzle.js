@@ -50,31 +50,17 @@ const PHYSICS = {
   ceilingSolveDisplacement: 14,
   // Consecutive simulation ticks above threshold before reveal.
   ceilingSolveHoldTicks: 20,
-  // Invisible body thickness around each 1px line. Tunable after testing.
+  // One-shot wrong-bar cue: all social icons oxblood on the footer.
+  // Matches CSS: puzzle-wrong-bar-flash 1.2s at 120 Hz.
+  wrongBarHintMaxTicks: 144,
+  // Reduced-motion: two stepped olive holds across ~1.0s.
+  wrongBarHintReducedTicks: 120,
+  // Invisible body thickness around each 1px line.
   lineCollisionThickness: 6,
-  // Open-end clearance so words can route around line ends. Tunable after testing.
+  // Open-end clearance so words can route around line ends.
   lineEndClearance: 9,
-  // Gravity applied to a snapped header line body.
-  snappedLineGravity: 0.18,
-  // Velocity retention for the snapped line body.
-  snappedLineDamping: 0.985,
-  // Converts off-center overload into initial angular velocity.
-  snappedLineTorqueScale: 0.0008,
-  // Below this linear/angular speed, the snapped line can sleep after landing.
-  snappedLineSleepVelocity: 0.08,
-  // Reveal, Verlet line path: unused while the header uses kinematic fall (see
-  // updateSnappedTopLineKinematic); kept if we ever disable kinematic mode.
-  snappedLineRevealAngularDamping: 0.68,
+  // Max wobble/nudge angle for the snapped header line during kinematic fall.
   snappedLineRevealMaxAngle: 0.36,
-  snappedLineRevealLateralDamping: 0.92,
-  snappedLineRevealSpinDamping: 0.9,
-  // Depenetration reaction on the **bar** (skipped during reveal; letters only).
-  snappedLineGlyphReactionLinear: 0.014,
-  snappedLineGlyphReactionTorque: 0.00045,
-  snappedLineGlyphReactionMaxDV: 0.12,
-  snappedLineGlyphReactionMaxDomega: 0.02,
-  snappedLineGlyphReactionRevealLinearScale: 0.5,
-  snappedLineGlyphReactionRevealTorqueScale: 0.38,
   // Kinematic fall for the snapped `::after` line during unravel + sweep.
   revealLineKinematicDurationTicks: 600,
   revealLineKinematicDurationTicksReduced: 200,
@@ -130,27 +116,19 @@ const TEXT_STYLE_KEYS = [
 
 /** @type {readonly PuzzleQuoteRow[]} */
 const PUZZLE_QUOTES = [
+  { id: "rza-inspiration", quote: "Inspiration is found everywhere if you look hard enough.", author: "RZA" },
   { id: "aristotle-educated-mind", quote: "It is the mark of an educated mind to entertain a thought without accepting it.", author: "Aristotle" },
   { id: "michelangelo-aim", quote: "The greatest danger for most of us is not that our aim is too high and we miss it, but that it is too low and we reach it.", author: "Michelangelo" },
-  { id: "friedman-optimists", quote: "Pessimists sound smart. Optimists make money.", author: "Nat Friedman" },
-  { id: "marczewski-choose", quote: "You can't wait till everything is good to be happy. You have to choose.", author: "Jane Marczewski" },
-  { id: "leguin-journey", quote: "It is good to have an end to journey toward; but it is the journey that matters, in the end.", author: "Ursula K. Le Guin" },
   { id: "greek-proverb-trees", quote: "A society grows great when old men plant trees whose shade they know they shall never sit in.", author: "Greek proverb" },
-  { id: "nipsey-marathon", quote: "It's a marathon, not a sprint, but I still gotta win.", author: "Nipsey Hussle" },
+  { id: "marczewski-choose", quote: "You can't wait till everything is good to be happy. You have to choose.", author: "Jane Marczewski" },
+  { id: "godin-optimism", quote: "Optimism is the most important human trait, because it allows us to evolve our ideas, to improve our situation, and to hope for a better tomorrow.", author: "Seth Godin" },
   { id: "immortal-technique-purpose", quote: "The purpose of life is a life with a purpose. So I'd rather die for a cause than live a life that is worthless.", author: "Immortal Technique" }
 ];
 
-/* Hold after unhide before the tile (card) starts to fade in. */
-const REWARD_TILE_APPEAR_DELAY_MS = 1650;
-/* Beat 1: only the card chrome (section box): opacity + tiny Y — not the quote text. */
-/* Beats 2–3: kicker / h2 / blockquote / hint, then list lines — each line’s own fade. */
-const REWARD_BEAT1_MS = 3000;
-const REWARD_ENTRANCE_MS = 3900;
-const REWARD_BEAT_GAP_MS = 360;
-const REWARD_BEAT2_STAGGER_MS = 210;
-const REWARD_BEAT3_STAGGER_MS = 150;
-const REWARD_REDUCE_MOTION_MS = 840;
-/** Even fade (avoids “fast then done” from strong ease-out on long durations). */
+/* Hold after unhide before the card fades in (glyphs already falling). */
+const REWARD_TILE_APPEAR_DELAY_MS = 1100;
+const REWARD_CARD_MS = 800;
+const REWARD_REDUCE_MOTION_MS = 280;
 const REWARD_EASE = "cubic-bezier(0.45, 0, 0.55, 1)";
 
 function boot() {
@@ -186,7 +164,6 @@ function boot() {
     quoteStack,
     stage: "static",
     scenes: [],
-    prepared: false,
     running: false,
     rafId: 0,
     accumulator: 0,
@@ -207,14 +184,17 @@ function boot() {
     rewardUnlocked: false,
     rewardSweepEntranceDone: false,
     rewardAnimations: [],
+    rewardTimeouts: [],
     socialHintIcons,
+    wrongBarHintReady: true,
+    wrongBarHintActive: false,
+    wrongBarHintTicks: 0,
     smoothedLineNudgeY: 0
   };
 
   initRewardContent(state);
   bindEvents(state);
   installPointerDelegation(state);
-  prepareWhenReady();
 }
 
 function initRewardContent(state) {
@@ -226,7 +206,7 @@ function initRewardContent(state) {
   }
   state.quoteStack.textContent = "";
   state.quoteStack.classList.add("puzzle-quote-stack--floaty");
-  for (const row of PUZZLE_QUOTES) {
+  PUZZLE_QUOTES.forEach((row, idx) => {
     const item = document.createElement("li");
     const quote = document.createElement("blockquote");
     quote.className = "puzzle-quote-card";
@@ -238,9 +218,10 @@ function initRewardContent(state) {
     quote.append(quoteText, author);
     item.appendChild(quote);
     item.dataset.quoteId = row.id;
+    item.style.setProperty("--quote-i", String(idx));
     item.tabIndex = 0;
     state.quoteStack.appendChild(item);
-  }
+  });
 }
 
 function bindEvents(state) {
@@ -254,28 +235,28 @@ function bindEvents(state) {
 
   state.resetButton.addEventListener("click", () => resetPuzzle(state));
 
-  window.addEventListener("keydown", (e) => {
-    if ((e.key === "f" || e.key === "F") && state.stage === "active") {
-      startUnravelAllScenes(state);
-    } else if (e.key === "~" && state.stage === "active") {
-      forcePuzzleReveal(state);
-    }
-  });
-
   window.addEventListener("resize", () => refreshScene(state));
   window.addEventListener("scroll", () => refreshScene(state), { passive: true });
 }
 
 
 async function activatePuzzle(state) {
+  // Guard before await so a second click cannot prepare twice while fonts load.
+  state.stage = "active";
+  state.main.dataset.puzzleStage = "active";
+
   await waitForFonts();
-  prepareScene(state);
-  if (!state.scenes.length) {
+  if (state.stage !== "active") {
     return;
   }
 
-  state.stage = "active";
-  state.main.dataset.puzzleStage = "active";
+  prepareScene(state);
+  if (!state.scenes.length) {
+    state.stage = "static";
+    state.main.dataset.puzzleStage = "static";
+    return;
+  }
+
   state.resetButton.hidden = false;
   state.rewardUnlocked = false;
   state.ceilingSolveTicks = 0;
@@ -306,7 +287,6 @@ function resetPuzzle(state) {
 
   state.glyphLayer.hidden = true;
   clearScene(state);
-  state.prepared = false;
   state.separatorDisplacement = 0;
   state.separatorVelocity = 0;
   state.ceilingDisplacement = 0;
@@ -322,6 +302,8 @@ function resetPuzzle(state) {
   state.rewardUnlocked = false;
   state.rewardSweepEntranceDone = false;
   state.smoothedLineNudgeY = 0;
+  clearWrongBarHint(state);
+  state.wrongBarHintReady = true;
   if (state.separator) {
     state.separator.style.transform = "";
     state.separator.classList.remove("is-compressing");
@@ -343,12 +325,10 @@ function prepareScene(state) {
 
   const scenes = buildAllScenes(state.walls, state.glyphLayer);
   if (!scenes.length) {
-    state.prepared = false;
     return;
   }
 
   state.scenes = scenes;
-  state.prepared = true;
 
   for (const scene of scenes) {
     for (const letter of scene.letters) {
@@ -545,7 +525,6 @@ function buildElementScene(el, glyphLayer) {
       px: rp.x,
       py: rp.y,
       locked: true,
-      readingIdx,
       el: createGlyphElement(rp.ch, rp.w, rp.lineHeight, rp.textStyles, glyphLayer)
     };
   });
@@ -561,22 +540,33 @@ function buildElementScene(el, glyphLayer) {
     restLengths.push(dist * PHYSICS.constraintStretch);
   }
 
-  // Opt-in droop behavior: only the last 4 letters sag; the rest stay locked
-  // as normal anchors. We give the tail a small initial offset and let the
-  // constraint solver settle the chain into a tiny visible droop. constraintStretch
-  // already provides a few percent of slack per link, which is enough for a
-  // gentle hang without yanking the tail back onto the line.
+  // Opt-in droop: unlock a short free end so the chain settles into a visible
+  // sag. "start" sags the string head (first visual line); default/"tail" sags
+  // the string end. constraintStretch gives enough slack for a gentle hang.
   if (el.hasAttribute("data-puzzle-drop") && letters.length > 1) {
     const droopCount = Math.min(4, letters.length - 1);
-    const tailStart = letters.length - droopCount;
-    for (let si = tailStart; si < letters.length; si++) {
-      const letter = letters[si];
-      const sag = (si - tailStart + 1) * PHYSICS.tailSagStep;
-      letter.locked = false;
-      letter.x = letter.ox;
-      letter.y = letter.oy + sag;
-      letter.px = letter.ox;
-      letter.py = letter.y - Math.max(1, sag * 0.85);
+    const dropMode = el.dataset.puzzleDrop === "start" ? "start" : "tail";
+    if (dropMode === "start") {
+      for (let si = 0; si < droopCount; si++) {
+        const letter = letters[si];
+        const sag = (droopCount - si) * PHYSICS.tailSagStep;
+        letter.locked = false;
+        letter.x = letter.ox;
+        letter.y = letter.oy + sag;
+        letter.px = letter.ox;
+        letter.py = letter.y - Math.max(1, sag * 0.85);
+      }
+    } else {
+      const tailStart = letters.length - droopCount;
+      for (let si = tailStart; si < letters.length; si++) {
+        const letter = letters[si];
+        const sag = (si - tailStart + 1) * PHYSICS.tailSagStep;
+        letter.locked = false;
+        letter.x = letter.ox;
+        letter.y = letter.oy + sag;
+        letter.px = letter.ox;
+        letter.py = letter.y - Math.max(1, sag * 0.85);
+      }
     }
   }
 
@@ -584,8 +574,6 @@ function buildElementScene(el, glyphLayer) {
     letters,
     restLengths,
     lineHeight,
-    style: elStyle,
-    element: el,
     socialKey,
     sleeping: false,
     idleTicks: 0,
@@ -731,7 +719,22 @@ function tick(state, now) {
   const idleCeiling = Math.abs(state.ceilingVelocity) < 0.01 && state.ceilingDisplacement === 0;
   const idleSnappedLine = !state.snappedTopLine || state.snappedTopLine.sleeping;
   const idleReveal = state.revealPhase === "idle" || state.revealPhase === "revealed";
-  if (allSleeping && state.drags.size === 0 && idleSeparator && idleCeiling && idleSnappedLine && idleReveal) {
+  const pendingWrongBarHint =
+    state.wrongBarHintReady &&
+    !state.wrongBarHintActive &&
+    !state.topLineSnapped &&
+    state.revealPhase === "idle" &&
+    isAllRedSocialHint(state);
+  if (
+    allSleeping &&
+    state.drags.size === 0 &&
+    idleSeparator &&
+    idleCeiling &&
+    idleSnappedLine &&
+    idleReveal &&
+    !state.wrongBarHintActive &&
+    !pendingWrongBarHint
+  ) {
     state.accumulator = 0;
     state.rafId = requestAnimationFrame((time) => tick(state, time));
     return;
@@ -789,7 +792,30 @@ function startUnravelAllScenes(state) {
   }
 }
 
+function parkRevealChrome(state) {
+  state.separatorDisplacement = 0;
+  state.separatorVelocity = 0;
+  if (state.separator) {
+    state.separator.style.transform = "";
+    state.separator.classList.remove("is-compressing");
+  }
+  if (state.ceiling) {
+    state.ceiling.style.removeProperty("--puzzle-ceiling-offset");
+    state.ceiling.style.removeProperty("--puzzle-ceiling-x-offset");
+    state.ceiling.style.removeProperty("--puzzle-ceiling-rotation");
+    state.ceiling.style.setProperty("--puzzle-ceiling-opacity", "0");
+    state.ceiling.classList.remove("is-compressing");
+  }
+}
+
 function syncLineVisuals(state) {
+  // Transforms on in-flow header/separator expand document height. Once the
+  // reward is showing, scroll is unlocked, so park those offsets.
+  if (state.rewardSweepEntranceDone) {
+    parkRevealChrome(state);
+    return;
+  }
+
   if (state.separator) {
     state.separator.style.transform = `translateY(${state.separatorDisplacement}px)`;
     state.separator.classList.toggle("is-compressing", state.separatorDisplacement > 1);
@@ -879,7 +905,6 @@ function cascadeUnzip(letters, restLengths, lineHeight) {
 function simulate(state) {
   state._tickCount = (state._tickCount || 0) + 1;
 
-  const wallRect = state.walls.getBoundingClientRect();
   const topBar = state.topLineSnapped ? null : buildAttachedTopBar(state);
   const bottomBar = buildAttachedBottomBar(state);
   const sweepingReveal = state.revealPhase === "sweeping";
@@ -933,7 +958,7 @@ function simulate(state) {
       continue;
     }
 
-    // Progressive F-key unravel: unlock one letter every 2 simulation ticks.
+    // Progressive unravel: unlock one letter every 2 simulation ticks.
     // At fixedStep=1/120 that's still ~60 letters/sec (visually identical to
     // 120/sec) but it spreads the simultaneous unlock + integration spike
     // across twice as many frames so the per-frame budget never collapses.
@@ -1019,8 +1044,6 @@ function simulate(state) {
         constrainLetters(
           letters,
           lineHeight,
-          wallRect,
-          draggedIndexes,
           collisionBottomBar,
           collisionTopBar,
           allowFallThroughViewportBottom
@@ -1044,8 +1067,6 @@ function simulate(state) {
         constrainLetters(
           letters,
           lineHeight,
-          wallRect,
-          draggedIndexes,
           collisionBottomBar,
           collisionTopBar,
           allowFallThroughViewportBottom
@@ -1106,7 +1127,13 @@ function simulate(state) {
 
   updateBottomBarSpring(state, bottomBar);
   updateTopBarSpringAndSnap(state, topBar);
-  updateSnappedTopLine(state, bottomBar);
+  if (!state.topLineSnapped) {
+    const floorKeys = getBarSocialHits(state.scenes, bottomBar);
+    const ceilingKeys = getBarSocialHits(state.scenes, topBar);
+    updateSocialHintIcons(state, floorKeys, ceilingKeys);
+    updateWrongBarHint(state, floorKeys, ceilingKeys);
+  }
+  updateSnappedTopLine(state);
   updateRevealSequence(state);
 }
 
@@ -1311,7 +1338,7 @@ function isTopBarFaceContact(letter, bar) {
   return Math.abs((letter.y + letter.h) - bar.top) <= contactSlop;
 }
 
-function getTopBarSocialHits(scenes, bar) {
+function getBarSocialHits(scenes, bar) {
   const hits = new Set();
   if (!bar) {
     return hits;
@@ -1330,21 +1357,132 @@ function getTopBarSocialHits(scenes, bar) {
   return hits;
 }
 
-function updateSocialHintIcons(state, activeKeys) {
+function updateSocialHintIcons(state, floorKeys, ceilingKeys) {
   if (!state.socialHintIcons) {
     return;
   }
+  // Freeze oxblood/olive classes while the wrong-bar cue runs so a single-tick
+  // contact loss cannot cancel the CSS flash mid-pulse.
+  if (state.wrongBarHintActive) {
+    return;
+  }
+  const floor = floorKeys || new Set();
+  const ceiling = ceilingKeys || new Set();
   for (const [key, icon] of state.socialHintIcons.entries()) {
-    icon.classList.toggle("is-puzzle-top-hit", activeKeys.has(key));
+    const onCeiling = ceiling.has(key);
+    const onFloor = !onCeiling && floor.has(key);
+    icon.classList.toggle("is-puzzle-floor-hit", onFloor);
+    icon.classList.toggle("is-puzzle-ceiling-hit", onCeiling);
   }
 }
 
 function clearSocialHintIcons(state) {
-  updateSocialHintIcons(state, new Set());
+  updateSocialHintIcons(state, new Set(), new Set());
+  clearWrongBarHint(state);
+}
+
+function allFloorIconsLit(state, floorKeys, ceilingKeys) {
+  if (!state.socialHintIcons?.size) {
+    return false;
+  }
+  if (ceilingKeys.size) {
+    return false;
+  }
+  for (const key of state.socialHintIcons.keys()) {
+    if (!floorKeys.has(key)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function setWrongBarHintIcons(state, on) {
+  if (!state.socialHintIcons) {
+    return;
+  }
+  for (const icon of state.socialHintIcons.values()) {
+    icon.classList.toggle("is-puzzle-wrong-bar-hint", on);
+  }
+}
+
+function setWrongBarOliveStep(state, on) {
+  if (!state.socialHintIcons) {
+    return;
+  }
+  for (const icon of state.socialHintIcons.values()) {
+    icon.classList.toggle("is-puzzle-wrong-bar-olive", on);
+  }
+}
+
+function clearWrongBarHint(state) {
+  state.wrongBarHintActive = false;
+  state.wrongBarHintTicks = 0;
+  setWrongBarHintIcons(state, false);
+  setWrongBarOliveStep(state, false);
+}
+
+function startWrongBarHint(state) {
+  state.wrongBarHintReady = false;
+  state.wrongBarHintActive = true;
+  state.wrongBarHintTicks = 0;
+  setWrongBarHintIcons(state, true);
+  setWrongBarOliveStep(state, false);
+}
+
+function isAllRedSocialHint(state) {
+  if (!state.socialHintIcons?.size || state.topLineSnapped) {
+    return false;
+  }
+  const topBar = buildAttachedTopBar(state);
+  const bottomBar = buildAttachedBottomBar(state);
+  const floorKeys = getBarSocialHits(state.scenes, bottomBar);
+  const ceilingKeys = getBarSocialHits(state.scenes, topBar);
+  return allFloorIconsLit(state, floorKeys, ceilingKeys);
+}
+
+function updateWrongBarHint(state, floorKeys, ceilingKeys) {
+  if (state.topLineSnapped || state.revealPhase !== "idle") {
+    clearWrongBarHint(state);
+    return;
+  }
+
+  const allRed = allFloorIconsLit(state, floorKeys, ceilingKeys);
+
+  if (!state.wrongBarHintActive) {
+    if (!allRed) {
+      // Re-arm only after the all-red set breaks (and the prior cue has finished).
+      state.wrongBarHintReady = true;
+      return;
+    }
+    if (!state.wrongBarHintReady) {
+      return;
+    }
+    startWrongBarHint(state);
+  }
+
+  // Once started, run the full cue even if a string briefly loses footer contact.
+  state.wrongBarHintTicks += 1;
+  const reduce = prefersReducedMotion();
+  const maxTicks = reduce ? PHYSICS.wrongBarHintReducedTicks : PHYSICS.wrongBarHintMaxTicks;
+
+  if (reduce) {
+    // Two stepped olive holds: ticks 1–24 and 49–72 across ~1.0s.
+    const t = state.wrongBarHintTicks;
+    const olive = (t >= 1 && t <= 24) || (t >= 49 && t <= 72);
+    setWrongBarOliveStep(state, olive);
+  }
+
+  if (state.wrongBarHintTicks >= maxTicks) {
+    clearWrongBarHint(state);
+    // Stay disarmed while still all-red so the cue stays one-shot per hold.
+    if (!allRed) {
+      state.wrongBarHintReady = true;
+    }
+  }
 }
 
 function updateBottomBarSpring(state, bottomBar) {
-  if (!bottomBar) {
+  if (!bottomBar || state.revealPhase !== "idle") {
     return;
   }
 
@@ -1365,8 +1503,6 @@ function updateTopBarSpringAndSnap(state, topBar) {
     return;
   }
 
-  updateSocialHintIcons(state, getTopBarSocialHits(state.scenes, topBar));
-
   const load = getTopFaceLoad(state.scenes, topBar, false);
   const weight = load.count * PHYSICS.ceilingGlyphMass * PHYSICS.gravity;
   const spring = -PHYSICS.ceilingSpringK * state.ceilingDisplacement;
@@ -1385,30 +1521,15 @@ function updateTopBarSpringAndSnap(state, topBar) {
 
   if (state.ceilingSolveTicks >= PHYSICS.ceilingSolveHoldTicks) {
     clearSocialHintIcons(state);
-    snapTopLine(state, topBar, load.centerX);
+    snapTopLine(state, topBar);
   }
 }
 
-function forcePuzzleReveal(state) {
-  if (state.rewardUnlocked || state.revealPhase !== "idle") {
-    return;
-  }
-
-  if (!state.topLineSnapped) {
-    const topBar = buildAttachedTopBar(state);
-    snapTopLine(state, topBar, getRevealLoadCenterX(state, topBar));
-    return;
-  }
-
-  startRevealSequence(state);
-}
-
-function snapTopLine(state, topBar, loadCenterX) {
+function snapTopLine(state, topBar) {
   if (state.topLineSnapped) {
     return;
   }
 
-  void loadCenterX;
   state.topLineSnapped = true;
   state.smoothedLineNudgeY = 0;
   state.snappedTopLine = {
@@ -1428,24 +1549,6 @@ function snapTopLine(state, topBar, loadCenterX) {
   state.ceilingDisplacement = 0;
   state.ceilingVelocity = 0;
   startRevealSequence(state);
-}
-
-function getRevealLoadCenterX(state, topBar) {
-  let total = 0;
-  let count = 0;
-  for (const scene of state.scenes) {
-    for (const letter of scene.letters) {
-      if (letter.locked) {
-        continue;
-      }
-      total += letter.x + letter.w / 2;
-      count += 1;
-    }
-  }
-  if (count > 0) {
-    return total / count;
-  }
-  return topBar.cx + topBar.width * 0.18;
 }
 
 function startRevealSequence(state) {
@@ -1534,18 +1637,6 @@ function allRevealObjectsOffscreen(state) {
   return !state.snappedTopLine || state.snappedTopLine.cy > threshold;
 }
 
-function unlockAllScenesNow(state) {
-  for (const scene of state.scenes) {
-    wakeScene(scene);
-    scene.unraveling = false;
-    scene.unravelIdx = -1;
-    for (const letter of scene.letters) {
-      letter.locked = false;
-      setLetterInteractive(letter, false);
-    }
-  }
-}
-
 function moveUnlockedGlyphsOffscreen(state) {
   const thresholdY = window.innerHeight + PHYSICS.revealOffscreenMargin;
   for (const scene of state.scenes) {
@@ -1575,26 +1666,13 @@ function moveUnlockedGlyphsOffscreen(state) {
 }
 
 function finishReveal(state) {
-  let preSwapHeight = 0;
-  if (state.walls) {
-    preSwapHeight = Math.ceil(state.walls.getBoundingClientRect().height);
-  }
   state.revealPhase = "revealed";
   state.revealTicks = 0;
   const restoreY = unlockRevealScroll(state);
-  if (state.walls && preSwapHeight > 0) {
-    if (state.revealLayoutTimer) {
-      window.clearTimeout(state.revealLayoutTimer);
-      state.revealLayoutTimer = 0;
-    }
-    state.walls.style.setProperty("--puzzle-reveal-min-height", `${preSwapHeight}px`);
-    state.walls.dataset.puzzleRevealLayout = "locked";
-  }
   if (state.main) {
     state.main.dataset.puzzleStage = "revealed";
   }
-  completeRewardReveal(state);
-  settleRevealLayout(state, preSwapHeight);
+  settleRevealLayout(state);
   scrollRewardIntoView(state, restoreY);
 }
 
@@ -1675,21 +1753,26 @@ function lockRevealLayout(state) {
   state.walls.dataset.puzzleRevealLayout = "locked";
 }
 
-/* After finishReveal: keep min-height through reward entrance (see REWARD_* timing). */
-const REVEAL_FADE_SETTLE_MS = 16650;
+/* Hold walls min-height briefly after reward fade so the footer does not jump. */
+const REVEAL_FADE_SETTLE_MS = REWARD_CARD_MS + 200;
 
-function settleRevealLayout(state, preSwapHeight) {
+function lockWallsToRewardHeight(state) {
+  if (!state.walls || !state.reward || state.reward.hidden) {
+    return;
+  }
+  const height = Math.ceil(state.reward.getBoundingClientRect().height);
+  state.walls.style.setProperty("--puzzle-reveal-min-height", `${height}px`);
+  state.walls.dataset.puzzleRevealLayout = "locked";
+}
+
+function settleRevealLayout(state) {
   if (!state.walls || !state.reward) {
     clearRevealLayout(state);
     return;
   }
 
   window.requestAnimationFrame(() => {
-    const rewardBlock = Math.ceil(state.reward.getBoundingClientRect().height + 32);
-    const pre = preSwapHeight > 0 ? preSwapHeight : 0;
-    const height = Math.max(rewardBlock, pre);
-    state.walls.style.setProperty("--puzzle-reveal-min-height", `${height}px`);
-    state.walls.dataset.puzzleRevealLayout = "locked";
+    lockWallsToRewardHeight(state);
     const delay = prefersReducedMotion() ? 0 : REVEAL_FADE_SETTLE_MS;
     state.revealLayoutTimer = window.setTimeout(() => {
       clearRevealLayout(state);
@@ -1790,76 +1873,19 @@ function updateSnappedTopLineKinematic(state, bar) {
   bar.angularVelocity = 0;
 }
 
-function updateSnappedTopLine(state, bottomBar) {
+function updateSnappedTopLine(state) {
   const bar = state.snappedTopLine;
   if (!bar || bar.sleeping) {
     return;
   }
 
   const revealActive = state.revealPhase !== "idle" && state.revealPhase !== "revealed";
-
-  if (revealActive) {
-    updateSnappedTopLineKinematic(state, bar);
-    collideLettersWithSnappedLine(state, bar);
-    return;
-  }
-
-  // Fallback: Verlet line (e.g. if kinematic is ever bypassed with reveal off).
-  bar.vy += PHYSICS.snappedLineGravity;
-  bar.vx *= PHYSICS.snappedLineDamping;
-  bar.vy *= PHYSICS.snappedLineDamping;
-  bar.angularVelocity *= PHYSICS.snappedLineDamping;
-  bar.cx += bar.vx;
-  bar.cy += bar.vy;
-  bar.angle += bar.angularVelocity;
-  constrainSnappedLineRevealRotation(bar, false);
-
-  collideLettersWithSnappedLine(state, bar);
-
-  // While the reveal is running, the snapped header line passes through the
-  // footer separator so it can fall off with the glyphs; only after that
-  // (theory: line should be gone) would we rest on the bottom bar.
-  if (!revealActive && bottomBar && snappedLineOverlapsBar(bar, bottomBar)) {
-    const bottom = snappedLineBottom(bar);
-    const penetration = bottom - bottomBar.top;
-    if (penetration > 0) {
-      const impact = Math.abs(bar.vy);
-      const rollDirection = Math.sign(bar.angularVelocity || bar.vx || Math.sin(bar.angle) || 1);
-      bar.cy -= penetration;
-      bar.vy *= -0.28;
-      bar.vx += rollDirection * Math.min(0.18, impact * 0.04);
-      bar.angularVelocity = (bar.angularVelocity + rollDirection * Math.min(0.018, impact * 0.003)) * 0.78;
-    }
-  }
-
-  if (
-    !revealActive &&
-    Math.abs(bar.vy) < PHYSICS.snappedLineSleepVelocity &&
-    Math.abs(bar.angularVelocity) < PHYSICS.snappedLineSleepVelocity * 0.03 &&
-    (bar.cy > window.innerHeight + 80 || (bottomBar && snappedLineBottom(bar) >= bottomBar.top - 0.5))
-  ) {
-    bar.sleeping = true;
-    bar.vx = 0;
-    bar.vy = 0;
-    bar.angularVelocity = 0;
-  }
-}
-
-function constrainSnappedLineRevealRotation(bar, revealActive) {
   if (!revealActive) {
     return;
   }
 
-  bar.angularVelocity *= PHYSICS.snappedLineRevealAngularDamping;
-  if (Math.abs(bar.angle) <= PHYSICS.snappedLineRevealMaxAngle) {
-    return;
-  }
-
-  const direction = Math.sign(bar.angle);
-  bar.angle = direction * PHYSICS.snappedLineRevealMaxAngle;
-  if (Math.sign(bar.angularVelocity) === direction) {
-    bar.angularVelocity = 0;
-  }
+  updateSnappedTopLineKinematic(state, bar);
+  collideLettersWithSnappedLine(state, bar);
 }
 
 function snappedLineBottom(bar) {
@@ -1870,19 +1896,6 @@ function snappedLineBottom(bar) {
   ) + bar.thickness / 2;
 }
 
-function snappedLineOverlapsBar(line, bar) {
-  const halfW = line.width / 2;
-  const left = Math.min(
-    line.cx - Math.cos(line.angle) * halfW,
-    line.cx + Math.cos(line.angle) * halfW
-  );
-  const right = Math.max(
-    line.cx - Math.cos(line.angle) * halfW,
-    line.cx + Math.cos(line.angle) * halfW
-  );
-  return right > bar.left + bar.endClearance && left < bar.right - bar.endClearance;
-}
-
 function collideLettersWithSnappedLine(state, bar) {
   const halfW = bar.width / 2;
   const dx = Math.cos(bar.angle);
@@ -1890,7 +1903,6 @@ function collideLettersWithSnappedLine(state, bar) {
   const nx = -dy;
   const ny = dx;
   const radius = PHYSICS.collisionRadius + bar.thickness / 2;
-  const revealActive = state.revealPhase !== "idle" && state.revealPhase !== "revealed";
 
   for (const scene of state.scenes) {
     for (const letter of scene.letters) {
@@ -1914,23 +1926,6 @@ function collideLettersWithSnappedLine(state, bar) {
       letter.y += ny * push;
       letter.px = letter.x;
       letter.py = letter.y;
-      if (revealActive) {
-        continue;
-      }
-      // Reactions on the bar (kinematic reveal moves the line via tween only).
-      const li = PHYSICS.snappedLineGlyphReactionLinear;
-      const ti = PHYSICS.snappedLineGlyphReactionTorque;
-      let dvx = -nx * push * li;
-      let dvy = -ny * push * li;
-      let domega = -along * push * ti;
-      const vcap = PHYSICS.snappedLineGlyphReactionMaxDV;
-      const wcap = PHYSICS.snappedLineGlyphReactionMaxDomega;
-      dvx = Math.max(-vcap, Math.min(vcap, dvx));
-      dvy = Math.max(-vcap, Math.min(vcap, dvy));
-      domega = Math.max(-wcap, Math.min(wcap, domega));
-      bar.vx += dvx;
-      bar.vy += dvy;
-      bar.angularVelocity += domega;
     }
   }
 }
@@ -1938,8 +1933,6 @@ function collideLettersWithSnappedLine(state, bar) {
 function constrainLetters(
   letters,
   lineHeight,
-  wallRect,
-  draggedIndexes,
   floorLine,
   ceilingLine,
   allowFallThroughViewportBottom = false
@@ -1949,8 +1942,6 @@ function constrainLetters(
   // viewport (letter.x, letter.y)). Walls are therefore the literal viewport
   // edges, recomputed from window.innerWidth/innerHeight each tick so resize
   // is automatic. The visible top/bottom lines are finite spring objects.
-  void wallRect; // wallRect kept on the signature for future use; not needed here
-  void draggedIndexes; // Dragged letters are constrained after pointer placement too.
   const minX = 0;
   const minY = 0;
   const maxX = window.innerWidth;
@@ -2126,12 +2117,38 @@ function applyDragPositionsForScene(
 
 function syncScene(scene) {
   for (const letter of scene.letters) {
-    setLetterInteractive(letter, true);
     letter.el.style.transform = `translate(${letter.x}px, ${letter.y}px)`;
   }
 }
 
+function cancelRewardTimeouts(state) {
+  for (const entry of state.rewardTimeouts || []) {
+    window.clearTimeout(entry.id);
+    try {
+      entry.reject?.(new Error("cancelled"));
+    } catch (_) {
+      // ignore
+    }
+  }
+  state.rewardTimeouts = [];
+}
+
+function delayReward(state, ms) {
+  return new Promise((resolve, reject) => {
+    const entry = { id: 0, reject };
+    entry.id = window.setTimeout(() => {
+      state.rewardTimeouts = (state.rewardTimeouts || []).filter((item) => item !== entry);
+      resolve();
+    }, ms);
+    if (!state.rewardTimeouts) {
+      state.rewardTimeouts = [];
+    }
+    state.rewardTimeouts.push(entry);
+  });
+}
+
 function cancelRewardAnimations(state) {
+  cancelRewardTimeouts(state);
   if (!state.rewardAnimations?.length) {
     state.rewardAnimations = [];
     return;
@@ -2146,22 +2163,6 @@ function cancelRewardAnimations(state) {
   state.rewardAnimations = [];
 }
 
-function clearRewardEntranceStyles(rewardRoot) {
-  if (!rewardRoot) {
-    return;
-  }
-  rewardRoot.style.removeProperty("clip-path");
-  rewardRoot.style.removeProperty("opacity");
-  rewardRoot.style.removeProperty("transform");
-  const nodes = rewardRoot.querySelectorAll(
-    ".puzzle-reward-kicker, .puzzle-reward > h2, .puzzle-reward-hint, .puzzle-quote-stack li"
-  );
-  for (const el of nodes) {
-    el.style.removeProperty("opacity");
-    el.style.removeProperty("transform");
-  }
-}
-
 function pushRewardAnim(state, anim) {
   if (!state.rewardAnimations) {
     state.rewardAnimations = [];
@@ -2169,7 +2170,28 @@ function pushRewardAnim(state, anim) {
   state.rewardAnimations.push(anim);
 }
 
-/** Runs when unravel finishes and sweeping begins — quotes fade while glyphs still fall. */
+function clearRewardEntranceStyles(rewardRoot) {
+  if (!rewardRoot) {
+    return;
+  }
+  rewardRoot.style.removeProperty("opacity");
+  rewardRoot.style.removeProperty("transform");
+  delete rewardRoot.dataset.puzzleEnter;
+}
+
+function rewardEntranceStillLive(state) {
+  return Boolean(state.reward && !state.reward.hidden && state.rewardSweepEntranceDone);
+}
+
+/** Collapse original copy; drop the intro min-height lock. */
+function swapPuzzleCopyForReward(state) {
+  clearRevealLayout(state);
+  if (state.main) {
+    state.main.dataset.puzzleStage = "revealed";
+  }
+}
+
+/** Runs when unravel finishes and sweeping begins — whole card fades while glyphs fall. */
 function beginRewardEntrance(state) {
   if (!state.reward || state.rewardSweepEntranceDone) {
     return;
@@ -2178,119 +2200,82 @@ function beginRewardEntrance(state) {
   state.rewardUnlocked = true;
 
   cancelRewardAnimations(state);
+  swapPuzzleCopyForReward(state);
+  parkRevealChrome(state);
+
+  const r = state.reward;
+  delete r.dataset.puzzleRevealed;
+  r.dataset.puzzleEnter = "prep";
+  r.style.opacity = "0";
+  r.style.transform = "translateY(6px)";
+  r.hidden = false;
+  r.setAttribute("aria-busy", "true");
+  void r.offsetHeight;
+
+  // Allow scrolling as soon as the reward is on screen (sweep may still run).
+  unlockRevealScroll(state);
+  lockWallsToRewardHeight(state);
 
   const reduceMotion = prefersReducedMotion();
-  state.reward.style.opacity = "0";
-  state.reward.style.transform = reduceMotion ? "translateY(0)" : "translateY(5px)";
-  state.reward.hidden = false;
-  state.reward.setAttribute("aria-busy", "true");
 
-  window.requestAnimationFrame(() => {
-    if (!state.reward) {
-      return;
-    }
-
-    if (state.walls?.dataset?.puzzleRevealLayout === "locked") {
-      const h = Math.ceil(state.walls.getBoundingClientRect().height);
-      state.walls.style.setProperty("--puzzle-reveal-min-height", `${h}px`);
-    }
-
-    const r = state.reward;
-    const kicker = r.querySelector(".puzzle-reward-kicker");
-    const heading = r.querySelector("h2");
-    const hint = r.querySelector(".puzzle-reward-hint");
-    const lis = [...r.querySelectorAll(".puzzle-quote-stack li")];
-    const headEls = [kicker, heading, hint].filter(
-      (el) => el instanceof Element
-    );
-
-    const run = async () => {
-      const textFade = [
-        { opacity: 0, transform: "translateY(2px)" },
-        { opacity: 1, transform: "translateY(0)" }
-      ];
-      try {
-        if (reduceMotion) {
-          const o = r.animate([{ opacity: 0 }, { opacity: 1 }], {
-            delay: REWARD_TILE_APPEAR_DELAY_MS,
-            duration: REWARD_REDUCE_MOTION_MS,
-            easing: REWARD_EASE,
-            fill: "forwards"
-          });
-          pushRewardAnim(state, o);
-          await o.finished;
-          for (const el of [...headEls, ...lis]) {
-            el.style.opacity = "1";
-            el.style.transform = "translateY(0)";
-          }
+  const run = async () => {
+    try {
+      if (!reduceMotion) {
+        await delayReward(state, REWARD_TILE_APPEAR_DELAY_MS);
+        if (!rewardEntranceStillLive(state)) {
           return;
         }
-
-        await new Promise((resolve) => {
-          setTimeout(resolve, REWARD_TILE_APPEAR_DELAY_MS);
-        });
-
-        const boxAnim = r.animate(
-          [
-            { opacity: 0, transform: "translateY(5px)" },
-            { opacity: 1, transform: "translateY(0)" }
-          ],
-          { duration: REWARD_BEAT1_MS, easing: REWARD_EASE, fill: "forwards" }
-        );
-        pushRewardAnim(state, boxAnim);
-        await boxAnim.finished;
-
-        const headAnims = headEls.map((el, idx) => {
-          const a = el.animate(textFade, {
-            duration: REWARD_ENTRANCE_MS,
-            delay: idx * REWARD_BEAT2_STAGGER_MS,
-            easing: REWARD_EASE,
-            fill: "forwards"
-          });
-          pushRewardAnim(state, a);
-          return a;
-        });
-        if (headAnims.length) {
-          await Promise.all(headAnims.map((a) => a.finished));
-        }
-
-        await new Promise((resolve) => {
-          setTimeout(resolve, REWARD_BEAT_GAP_MS);
-        });
-
-        const listAnims = lis.map((el, idx) => {
-          const a = el.animate(textFade, {
-            duration: REWARD_ENTRANCE_MS,
-            delay: idx * REWARD_BEAT3_STAGGER_MS,
-            easing: REWARD_EASE,
-            fill: "forwards"
-          });
-          pushRewardAnim(state, a);
-          return a;
-        });
-        if (listAnims.length) {
-          await Promise.all(listAnims.map((a) => a.finished));
-        }
-      } catch {
-        // e.g. animation cancelled
-      } finally {
-        if (state.reward?.getAttribute("aria-busy") === "true") {
-          state.reward.removeAttribute("aria-busy");
-        }
       }
-    };
 
-    void run();
-  });
+      const duration = reduceMotion ? REWARD_REDUCE_MOTION_MS : REWARD_CARD_MS;
+      const cardAnim = r.animate(
+        [
+          { opacity: 0, transform: reduceMotion ? "none" : "translateY(6px)" },
+          { opacity: 1, transform: "none" }
+        ],
+        {
+          duration,
+          easing: reduceMotion ? "linear" : REWARD_EASE,
+          fill: "forwards"
+        }
+      );
+      pushRewardAnim(state, cardAnim);
+      await cardAnim.finished;
+      if (!rewardEntranceStillLive(state)) {
+        return;
+      }
+      try {
+        cardAnim.commitStyles?.();
+      } catch (_) {
+        // ignore
+      }
+      try {
+        cardAnim.cancel();
+      } catch (_) {
+        // ignore
+      }
+
+      r.removeAttribute("aria-busy");
+      completeRewardReveal(state);
+      settleRevealLayout(state);
+    } catch {
+      // cancelled on reset
+    }
+  };
+
+  void run();
 }
 
-/** After sweep completes: page stage + list completion marker (entrance may still be animating). */
+/** Marks entrance finished so floaty CSS and reading focus can take over. */
 function completeRewardReveal(state) {
   if (!state.reward) {
     return;
   }
   state.rewardUnlocked = true;
   clearSocialHintIcons(state);
+  delete state.reward.dataset.puzzleEnter;
+  state.reward.style.removeProperty("opacity");
+  state.reward.style.removeProperty("transform");
   state.reward.dataset.puzzleRevealed = "true";
 }
 
@@ -2303,6 +2288,7 @@ function hideReward(state) {
   state.rewardSweepEntranceDone = false;
   state.reward.hidden = true;
   delete state.reward.dataset.puzzleRevealed;
+  delete state.reward.dataset.puzzleEnter;
   state.reward.removeAttribute("aria-busy");
 }
 
@@ -2341,10 +2327,6 @@ function applyTextStyles(element, styles) {
     }
     element.style[key] = value;
   }
-}
-
-async function prepareWhenReady() {
-  await waitForFonts();
 }
 
 function waitForFonts() {

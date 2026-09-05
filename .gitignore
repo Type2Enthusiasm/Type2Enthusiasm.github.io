@@ -16,4 +16,5 @@ CLAUDE.md
 .agents/
 .cursor/
 .claude/
+skills-lock.json
 
